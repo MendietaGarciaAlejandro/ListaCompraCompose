@@ -11,6 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(entities = [Product::class], version = 3)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
+    abstract fun templateDao(): TemplateDao
 
     companion object {
         @Volatile

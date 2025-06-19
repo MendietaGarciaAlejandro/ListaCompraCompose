@@ -1,6 +1,7 @@
 // CompraApp.kt
 package com.example.listacompracompose
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,6 +31,12 @@ fun CompraApp(vm: CompraViewModel) {
         println("Items actualizados: ${items.size}")
         items.forEach { println("- ${it.name} (${it.quantity})") }
     }
+
+    val templates by vm.templates.collectAsState()
+    var tplName by remember { mutableStateOf("") }
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var showLoadDialog by remember { mutableStateOf(false) }
+
 
     var showInsert by remember { mutableStateOf(false) }
     var showEdit by remember { mutableStateOf(false) } // Nuevo: Diálogo de edición
@@ -74,6 +81,11 @@ fun CompraApp(vm: CompraViewModel) {
                 .padding(16.dp)
                 .fillMaxSize()
         ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { tplName = ""; showSaveDialog = true }) { Text("Guardar Plantilla") }
+                Button(onClick = { tplName = ""; showLoadDialog = true }) { Text("Cargar Plantilla") }
+            }
+            Spacer(Modifier.height(16.dp))
             if (items.isEmpty()) {
                 Text("Lista vacía", style = MaterialTheme.typography.bodyMedium)
             } else {
@@ -153,6 +165,50 @@ fun CompraApp(vm: CompraViewModel) {
                 }
             }
         }
+    }
+
+    if (showSaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text("Guardar Plantilla") },
+            text = {
+                OutlinedTextField(
+                    value = tplName,
+                    onValueChange = { tplName = it },
+                    label = { Text("Nombre plantilla") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.saveTemplate(tplName)
+                    showSaveDialog = false
+                }) { Text("Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("Cancelar") } },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        )
+    }
+
+    if (showLoadDialog) {
+        AlertDialog(
+            onDismissRequest = { showLoadDialog = false },
+            title = { Text("Cargar Plantilla") },
+            text = {
+                LazyColumn { items(templates) { tpl ->
+                    ListItem(
+                        headlineContent = { Text(tpl.name) },
+                        modifier = Modifier.clickable {
+                            vm.loadTemplate(tpl.name)
+                            showLoadDialog = false
+                        }
+                    )
+                }}
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showLoadDialog = false }) { Text("Cerrar") } },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        )
     }
 
     // Diálogo para añadir nuevo producto

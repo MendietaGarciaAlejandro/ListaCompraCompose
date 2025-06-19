@@ -1,13 +1,18 @@
 // Repository.kt
 package com.example.listacompracompose
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 // Repository.kt
-class CompraRepository(private val dao: ProductDao) {
+class CompraRepository(private val db: AppDatabase) {
+    private val dao = db.productDao()
+    private val templateDao = db.templateDao()
+
     val allItems: Flow<List<Product>> = dao.getAll()
+    val allTemplates: Flow<List<Template>> = templateDao.getAllTemplates()
 
     suspend fun insert(prod: Product) {
         withContext(Dispatchers.IO) {
@@ -31,6 +36,13 @@ class CompraRepository(private val dao: ProductDao) {
                 dao.insert(prod)
             }
         }
+    }
+
+    suspend fun saveTemplate(name: String, products: List<Product>) = withContext(Dispatchers.IO) {
+        templateDao.insertTemplate(Template(name, products))
+    }
+    suspend fun loadTemplate(name: String): List<Product> = withContext(Dispatchers.IO) {
+        templateDao.getTemplate(name)?.products ?: emptyList()
     }
 
     suspend fun update(prod: Product) {

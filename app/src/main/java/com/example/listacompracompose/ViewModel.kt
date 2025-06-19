@@ -13,8 +13,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class CompraViewModel(application: Application) : AndroidViewModel(application) {
-    private val repo = CompraRepository(AppDatabase.getInstance(application).productDao())
+    private val repo = CompraRepository(AppDatabase.getInstance(application))
     val items = repo.allItems.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val templates = repo.allTemplates.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun insert(prod: Product) = viewModelScope.launch { repo.insert(prod) }
     fun update(prod: Product) = viewModelScope.launch { repo.update(prod) }
@@ -27,6 +28,14 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
                 CompraViewModel(app)
             }
         }
+    }
+
+    fun saveTemplate(name: String) = viewModelScope.launch { repo.saveTemplate(name, items.value) }
+    fun loadTemplate(name: String) = viewModelScope.launch {
+        val list = repo.loadTemplate(name)
+        // clear current and re-insert loaded
+        items.value.forEach { repo.delete(it.name) }
+        list.forEach { repo.insert(it) }
     }
 
     fun toggleCheckedStatus(name: String) = viewModelScope.launch {
