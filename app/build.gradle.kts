@@ -70,6 +70,7 @@ dependencies {
 
     // Moshi core
     implementation(libs.moshi)
+    implementation(libs.moshi.kotlin)
     // (Opcional, si quieres el generador de adaptadores Kotlin)
     kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.0")
 }
