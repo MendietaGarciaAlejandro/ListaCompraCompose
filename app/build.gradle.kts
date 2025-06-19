@@ -68,4 +68,8 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     kapt(libs.androidx.room.compiler)
 
+    // Moshi core
+    implementation(libs.moshi)
+    // (Opcional, si quieres el generador de adaptadores Kotlin)
+    kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.0")
 }
