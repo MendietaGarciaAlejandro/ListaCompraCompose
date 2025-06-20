@@ -41,8 +41,13 @@ class CompraRepository(private val db: AppDatabase) {
     suspend fun saveTemplate(name: String, products: List<Product>) = withContext(Dispatchers.IO) {
         templateDao.insertTemplate(Template(name, products))
     }
+
     suspend fun loadTemplate(name: String): List<Product> = withContext(Dispatchers.IO) {
         templateDao.getTemplate(name)?.products ?: emptyList()
+    }
+
+    suspend fun deleteTemplate(name: String) = withContext(Dispatchers.IO) {
+        templateDao.deleteTemplate(name)
     }
 
     suspend fun update(prod: Product) {

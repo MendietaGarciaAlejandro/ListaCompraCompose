@@ -195,15 +195,33 @@ fun CompraApp(vm: CompraViewModel) {
             onDismissRequest = { showLoadDialog = false },
             title = { Text("Cargar Plantilla") },
             text = {
-                LazyColumn { items(templates) { tpl ->
-                    ListItem(
-                        headlineContent = { Text(tpl.name) },
-                        modifier = Modifier.clickable {
-                            vm.loadTemplate(tpl.name)
-                            showLoadDialog = false
+                LazyColumn {
+                    items(templates) { tpl ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = tpl.name,
+                                Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        vm.loadTemplate(tpl.name)
+                                        showLoadDialog = false
+                                    }
+                                    .padding(8.dp)
+                            )
+                            IconButton(onClick = {
+                                vm.deleteTemplate(tpl.name)
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Eliminar plantilla")
+                            }
                         }
-                    )
-                }}
+                    }
+                }
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { showLoadDialog = false }) { Text("Cerrar") } },

@@ -38,6 +38,10 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
         list.forEach { repo.insert(it) }
     }
 
+    fun deleteTemplate(name: String) = viewModelScope.launch {
+        repo.deleteTemplate(name)
+    }
+
     fun toggleCheckedStatus(name: String) = viewModelScope.launch {
         repo.toggleCheckedStatus(name)
     }
