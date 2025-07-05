@@ -15,10 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.example.listacompracompose.PdfUtils.sharePdf
+import com.example.listacompracompose.PdfUtils.shareText
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +49,7 @@ fun CompraApp(vm: CompraViewModel) {
     var qty by remember { mutableStateOf("") }
     var currentProduct by remember { mutableStateOf<Product?>(null) } // Producto actualmente seleccionado
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -85,6 +89,25 @@ fun CompraApp(vm: CompraViewModel) {
                 Button(onClick = { tplName = ""; showSaveDialog = true }) { Text("Guardar Plantilla") }
                 Button(onClick = { tplName = ""; showLoadDialog = true }) { Text("Cargar Plantilla") }
             }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = {
+                    // Exportar PDF
+                    val file = PdfUtils.createShoppingListPdf(context, items)
+                    sharePdf(context, file)
+                }) {
+                    Text("Exportar PDF")
+                }
+                Button(onClick = {
+                    // Compartir como texto
+                    shareText(context, items)
+                }) {
+                    Text("Compartir Lista")
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
             if (items.isEmpty()) {
                 Text("Lista vacía", style = MaterialTheme.typography.bodyMedium)
