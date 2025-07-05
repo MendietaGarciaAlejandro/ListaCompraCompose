@@ -35,7 +35,7 @@ Este proyecto está bajo la Licencia MIT.
 
 ## ✍️ Autor
 
-Alejandro
+Alejandro Mendieta García
 
 ---
 *Desarrollado con ❤️ usando Jetpack Compose*
