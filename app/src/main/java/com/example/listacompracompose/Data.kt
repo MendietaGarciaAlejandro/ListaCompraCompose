@@ -9,5 +9,6 @@ data class Product(
     @PrimaryKey val name: String,
     val price: Double,
     var quantity: Int,
-    var isChecked: Boolean = false // Nuevo campo para estado "tachado"
+    var isChecked: Boolean = false, // Nuevo campo para estado "tachado"
+    var category: String = "General" // Nueva propiedad para la categoría por defecto
 )

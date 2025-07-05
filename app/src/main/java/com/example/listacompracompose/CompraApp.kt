@@ -11,6 +11,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,11 +25,16 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.listacompracompose.PdfUtils.sharePdf
 import com.example.listacompracompose.PdfUtils.shareText
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompraApp(vm: CompraViewModel) {
     val items by vm.items.collectAsState()
+    val groupedItems = items.groupBy { it.category }
+    val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     // Depuración: Imprime los items en la consola
     LaunchedEffect(items) {
@@ -48,6 +55,9 @@ fun CompraApp(vm: CompraViewModel) {
     var price by remember { mutableStateOf("") }
     var qty by remember { mutableStateOf("") }
     var currentProduct by remember { mutableStateOf<Product?>(null) } // Producto actualmente seleccionado
+    var categoria by remember { mutableStateOf<String?>(null) }
+    var isNewCat by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -113,64 +123,57 @@ fun CompraApp(vm: CompraViewModel) {
                 Text("Lista vacía", style = MaterialTheme.typography.bodyMedium)
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(items) { prod ->
-                        // CORRECCIÓN: Usamos un diseño personalizado en lugar de ListItem
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = prod.isChecked,
-                                onCheckedChange = { vm.toggleCheckedStatus(prod.name) },
-                                modifier = Modifier.padding(end = 16.dp)
-                            )
-
-                            Column(
-                                modifier = Modifier.weight(1f)
+                    groupedItems.forEach { (category, products) ->
+                        // Encabezado de categoría
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        expandedCategories[category] = expandedCategories[category] != true
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = prod.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    textDecoration = if (prod.isChecked) TextDecoration.LineThrough else TextDecoration.None,
-                                    color = if (prod.isChecked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                    else MaterialTheme.colorScheme.onSurface
+                                    text = category,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 8.dp)
                                 )
-
-                                Text(
-                                    text = "€${"%.2f".format(prod.price)} x ${prod.quantity}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textDecoration = if (prod.isChecked) TextDecoration.LineThrough else TextDecoration.None,
-                                    color = if (prod.isChecked) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                    else MaterialTheme.colorScheme.onSurface
+                                Icon(
+                                    imageVector = if (expandedCategories[category] == true)
+                                        Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Toggle categoría"
                                 )
                             }
+                            HorizontalDivider()
+                        }
 
-                            Row {
-                                IconButton(
-                                    onClick = {
+                        // Items dentro de la categoría si está expandida
+                        if (expandedCategories[category] == true) {
+                            items(products) { prod ->
+                                ProductItemRow(
+                                    product = prod,
+                                    onToggle = { vm.toggleCheckedStatus(prod.name) },
+                                    onEdit = {
                                         currentProduct = prod
                                         name = prod.name
                                         price = prod.price.toString()
                                         qty = prod.quantity.toString()
+                                        categoria = prod.category
                                         showEdit = true
-                                    }
-                                ) {
-                                    Icon(Icons.Default.Edit, contentDescription = "Editar")
-                                }
-
-                                IconButton(
-                                    onClick = {
+                                    },
+                                    onDelete = {
                                         name = prod.name
+                                        categoria = prod.category
                                         showDeleteOptions = true
                                     }
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Eliminar")
-                                }
+                                )
+                                HorizontalDivider()
                             }
                         }
-                        HorizontalDivider()
                     }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -283,28 +286,56 @@ fun CompraApp(vm: CompraViewModel) {
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
+                    Spacer(Modifier.height(8.dp))
+                    // Spinner categorías
+                    var expanded by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = if (isNewCat) categoria.orEmpty() else (categoria ?: "General"),
+                            onValueChange = { if (isNewCat) categoria = it },
+                            label = { Text("Categoría") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { if (!isNewCat) expanded = true },
+                            readOnly = !isNewCat,
+                            singleLine = true
+                        )
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.fillMaxWidth()) {
+                            (vm.getCategories() + "Nueva categoría...").distinct().forEach { catOpt ->
+                                DropdownMenuItem(text = { Text(catOpt) }, onClick = {
+                                    expanded = false
+                                    if (catOpt == "Nueva categoría...") {
+                                        isNewCat = true
+                                        categoria = ""
+                                    } else {
+                                        categoria = catOpt
+                                        isNewCat = false
+                                    }
+                                })
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
-                TextButton(
-                    enabled = name.isNotBlank(),
-                    onClick = {
-                        val n = name               // capturamos el nombre
-                        val p = price.toDoubleOrNull() ?: 0.0
-                        val q = qty.toIntOrNull() ?: 1
-                        scope.launch {
-                            vm.insert(Product(name = n, price = p, quantity = q))
-                        }
-                        // ahora limpiamos los estados
-                        name = ""
-                        price = ""
-                        qty = ""
-                        showInsert = false
+                TextButton(onClick = {
+                    val n = name
+                    val p = price.toDoubleOrNull() ?: 0.0
+                    val q = qty.toIntOrNull() ?: 1
+                    val c = categoria.takeUnless { it.isNullOrBlank() } ?: "General"
+                    scope.launch {
+                        if (showEdit && currentProduct != null) vm.update(currentProduct!!.copy(name = n, price = p, quantity = q, category = c))
+                        else vm.insert(Product(name = n, price = p, quantity = q, category = c))
                     }
-                ) { Text("Aceptar") }
+                    name = ""; price = ""; qty = ""; categoria = null; isNewCat = false; showInsert = false; showEdit = false
+                }) { Text("Aceptar") }
             },
             dismissButton = {
-                TextButton(onClick = { name = ""; price = ""; qty = ""; showInsert = false }) {
+                TextButton(
+                    onClick = {
+                        name = ""; price = ""; qty = ""; categoria = ""; showInsert = false
+                    }
+                ) {
                     Text("Cancelar")
                 }
             },
@@ -426,5 +457,44 @@ fun CompraApp(vm: CompraViewModel) {
                 }
             }
         )
+    }
+}
+
+@Composable
+fun ProductItemRow(
+    product: Product,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = product.isChecked,
+            onCheckedChange = { onToggle() },
+            modifier = Modifier.padding(end = 16.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = product.name,
+                style = MaterialTheme.typography.titleMedium,
+                textDecoration = if (product.isChecked) TextDecoration.LineThrough else null
+            )
+            Text(
+                text = "€${"%.2f".format(product.price)} x ${product.quantity}",
+                style = MaterialTheme.typography.bodyMedium,
+                textDecoration = if (product.isChecked) TextDecoration.LineThrough else null
+            )
+        }
+        IconButton(onClick = onEdit) {
+            Icon(Icons.Default.Edit, contentDescription = "Editar")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Eliminar")
+        }
     }
 }

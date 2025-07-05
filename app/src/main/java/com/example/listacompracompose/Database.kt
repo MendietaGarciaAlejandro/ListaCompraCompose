@@ -9,7 +9,10 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Product::class, Template::class], version = 4, exportSchema = false)
+@Database(
+    entities = [Product::class, Template::class],
+    version = 5, exportSchema = false
+)
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
@@ -19,43 +22,48 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        // Migración de la versión 1 a 2 (vacía)
+        // Migración v1 -> v2 (sin cambios)
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // No se necesitan cambios
+                // No changes
             }
         }
 
-        // Migración de la versión 2 a 3 (añade columna isChecked)
+        // Migración v2 -> v3: añade columna isChecked
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Añade la nueva columna
-                database.execSQL("ALTER TABLE productos ADD COLUMN isChecked INTEGER NOT NULL DEFAULT 0")
+                database.execSQL(
+                    "ALTER TABLE productos ADD COLUMN isChecked INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
 
+        // Migración v3 -> v4: crea tabla plantillas
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("""
-                  CREATE TABLE IF NOT EXISTS plantillas (
-                    name TEXT NOT NULL PRIMARY KEY,
-                    products TEXT NOT NULL
-                  )
-                """.trimIndent())
-                        }
+                database.execSQL("CREATE TABLE IF NOT EXISTS plantillas (name TEXT NOT NULL PRIMARY KEY, products TEXT NOT NULL)")
+            }
+        }
+
+        // Migración v4 -> v5: añade columna category
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE productos ADD COLUMN category TEXT NOT NULL DEFAULT 'General';")
+            }
         }
 
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                Room.databaseBuilder(
+                val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                    .fallbackToDestructiveMigration(false) // Permite reinicio en desarrollo
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
-                    .also { INSTANCE = it }
+                INSTANCE = instance
+                instance
             }
         }
     }
