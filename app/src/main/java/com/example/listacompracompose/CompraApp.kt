@@ -1,13 +1,16 @@
 // CompraApp.kt
 package com.example.listacompracompose
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -26,7 +29,7 @@ import com.example.listacompracompose.PdfUtils.sharePdf
 import com.example.listacompracompose.PdfUtils.shareText
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CompraApp(vm: CompraViewModel) {
     val items by vm.items.collectAsState()
@@ -46,8 +49,9 @@ fun CompraApp(vm: CompraViewModel) {
 
 
     var showInsert by remember { mutableStateOf(false) }
-    var showEdit by remember { mutableStateOf(false) } // Nuevo: Diálogo de edición
+    var showEdit by remember { mutableStateOf(false) }
     var showDeleteOptions by remember { mutableStateOf(false) }
+    var showClearAllDialog by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var qty by remember { mutableStateOf("") }
@@ -63,13 +67,20 @@ fun CompraApp(vm: CompraViewModel) {
             TopAppBar(
                 title = { Text("Lista de Compras") },
                 actions = {
-                    // Botón para limpiar selecciones
-                    IconButton(onClick = {
-                        scope.launch {
-                            items.filter { it.isChecked }
-                                .forEach { vm.toggleCheckedStatus(it.name) }
-                        }
-                    }) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .combinedClickable(
+                                onClick = {
+                                    scope.launch {
+                                        items.filter { it.isChecked }
+                                            .forEach { vm.toggleCheckedStatus(it.name) }
+                                    }
+                                },
+                                onLongClick = { showClearAllDialog = true }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(Icons.Default.Clear, contentDescription = "Limpiar selección")
                     }
                 }
@@ -80,6 +91,8 @@ fun CompraApp(vm: CompraViewModel) {
                 name = ""
                 price = ""
                 qty = ""
+                categoria = null
+                isNewCat = false
                 showInsert = true
             }) {
                 Icon(Icons.Default.Add, contentDescription = "Añadir producto")
@@ -160,6 +173,7 @@ fun CompraApp(vm: CompraViewModel) {
                                         price = prod.price.toString()
                                         qty = prod.quantity.toString()
                                         categoria = prod.category
+                                        isNewCat = false
                                         showEdit = true
                                     },
                                     onDelete = {
@@ -291,17 +305,25 @@ fun CompraApp(vm: CompraViewModel) {
                             value = if (isNewCat) categoria.orEmpty() else (categoria ?: "General"),
                             onValueChange = { if (isNewCat) categoria = it },
                             label = { Text("Categoría") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { if (!isNewCat) expanded = true },
+                            modifier = Modifier.fillMaxWidth(),
                             readOnly = !isNewCat,
-                            singleLine = true
+                            singleLine = true,
+                            trailingIcon = {
+                                if (!isNewCat) {
+                                    IconButton(onClick = { expanded = true }) {
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Seleccionar categoría")
+                                    }
+                                }
+                            }
                         )
+                        if (!isNewCat) {
+                            Box(modifier = Modifier.matchParentSize().clickable { expanded = true })
+                        }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.fillMaxWidth()) {
-                            (vm.getCategories() + "Nueva categoría...").distinct().forEach { catOpt ->
+                            (listOf("General") + vm.getCategories() + listOf("+ Nueva categoría...")).distinct().forEach { catOpt ->
                                 DropdownMenuItem(text = { Text(catOpt) }, onClick = {
                                     expanded = false
-                                    if (catOpt == "Nueva categoría...") {
+                                    if (catOpt == "+ Nueva categoría...") {
                                         isNewCat = true
                                         categoria = ""
                                     } else {
@@ -330,7 +352,7 @@ fun CompraApp(vm: CompraViewModel) {
             dismissButton = {
                 TextButton(
                     onClick = {
-                        name = ""; price = ""; qty = ""; categoria = ""; showInsert = false
+                        name = ""; price = ""; qty = ""; categoria = null; isNewCat = false; showInsert = false
                     }
                 ) {
                     Text("Cancelar")
@@ -371,30 +393,68 @@ fun CompraApp(vm: CompraViewModel) {
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
+                    Spacer(Modifier.height(8.dp))
+                    // Categoría en edición
+                    var expandedEdit by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = if (isNewCat) categoria.orEmpty() else (categoria ?: "General"),
+                            onValueChange = { if (isNewCat) categoria = it },
+                            label = { Text("Categoría") },
+                            modifier = Modifier.fillMaxWidth(),
+                            readOnly = !isNewCat,
+                            singleLine = true,
+                            trailingIcon = {
+                                if (!isNewCat) {
+                                    IconButton(onClick = { expandedEdit = true }) {
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Seleccionar categoría")
+                                    }
+                                }
+                            }
+                        )
+                        if (!isNewCat) {
+                            Box(modifier = Modifier.matchParentSize().clickable { expandedEdit = true })
+                        }
+                        DropdownMenu(expanded = expandedEdit, onDismissRequest = { expandedEdit = false }, modifier = Modifier.fillMaxWidth()) {
+                            (listOf("General") + vm.getCategories() + listOf("+ Nueva categoría...")).distinct().forEach { catOpt ->
+                                DropdownMenuItem(text = { Text(catOpt) }, onClick = {
+                                    expandedEdit = false
+                                    if (catOpt == "+ Nueva categoría...") {
+                                        isNewCat = true
+                                        categoria = ""
+                                    } else {
+                                        categoria = catOpt
+                                        isNewCat = false
+                                    }
+                                })
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     enabled = name.isNotBlank(),
                     onClick = {
-                        // Capturamos en locales antes de limpiar
                         val original = currentProduct
                         val n = name
                         val p = price.toDoubleOrNull() ?: 0.0
                         val q = qty.toIntOrNull() ?: 1
+                        val c = categoria.takeUnless { it.isNullOrBlank() } ?: "General"
 
                         scope.launch {
                             original?.let {
-                                val updated = it.copy(name = n, price = p, quantity = q)
+                                val updated = it.copy(name = n, price = p, quantity = q, category = c)
                                 vm.update(updated)
                             }
                         }
 
-                        // Ahora sí limpiamos los estados
                         currentProduct = null
                         name = ""
                         price = ""
                         qty = ""
+                        categoria = null
+                        isNewCat = false
                         showEdit = false
                     }
                 ) {
@@ -407,6 +467,8 @@ fun CompraApp(vm: CompraViewModel) {
                     name = ""
                     price = ""
                     qty = ""
+                    categoria = null
+                    isNewCat = false
                     showEdit = false
                 }) {
                     Text("Cancelar")
@@ -452,6 +514,26 @@ fun CompraApp(vm: CompraViewModel) {
                 ) {
                     Text("Eliminar solo uno")
                 }
+            }
+        )
+    }
+
+    // Diálogo para limpiar toda la lista (pulsación larga en la cruz)
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = { Text("Limpiar lista") },
+            text = { Text("¿Quieres eliminar todos los productos de la lista? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        items.forEach { vm.deleteAll(it.name) }
+                    }
+                    showClearAllDialog = false
+                }) { Text("Eliminar todo") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllDialog = false }) { Text("Cancelar") }
             }
         )
     }
