@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.example.listacompracompose"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.listacompracompose"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -32,16 +32,18 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-        // Añade esta línea
-        freeCompilerArgs += "-Xjvm-default=all"
-    }
     buildFeatures {
         compose = true
     }
     kapt {
         correctErrorTypes = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        freeCompilerArgs.add("-Xjvm-default=all")
     }
 }
 
@@ -56,6 +58,8 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.core)
+    implementation(libs.androidx.material.icons.extended)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -67,10 +71,11 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     kapt(libs.androidx.room.compiler)
+    kapt("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.0")
 
     // Moshi core
     implementation(libs.moshi)
     implementation(libs.moshi.kotlin)
     // (Opcional, si quieres el generador de adaptadores Kotlin)
-    kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.0")
+    kapt("com.squareup.moshi:moshi-kotlin-codegen:1.15.2")
 }

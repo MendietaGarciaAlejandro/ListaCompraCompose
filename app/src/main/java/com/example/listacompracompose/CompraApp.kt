@@ -25,9 +25,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.listacompracompose.PdfUtils.sharePdf
 import com.example.listacompracompose.PdfUtils.shareText
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.clickable
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
