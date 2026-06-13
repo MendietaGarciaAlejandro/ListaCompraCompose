@@ -10,13 +10,14 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Product::class, Template::class],
-    version = 5, exportSchema = false
+    entities = [Product::class, Template::class, ProductHistory::class],
+    version = 6, exportSchema = false
 )
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun templateDao(): TemplateDao
+    abstract fun productHistoryDao(): ProductHistoryDao
 
     companion object {
         @Volatile
@@ -52,6 +53,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migración v5 -> v6: crea tabla historial_productos
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS historial_productos (name TEXT NOT NULL PRIMARY KEY, price REAL NOT NULL, quantity INTEGER NOT NULL, category TEXT NOT NULL DEFAULT 'General')"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -59,7 +69,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

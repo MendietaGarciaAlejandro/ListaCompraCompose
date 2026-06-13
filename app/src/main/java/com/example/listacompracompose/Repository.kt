@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 class CompraRepository(private val db: AppDatabase) {
     private val dao = db.productDao()
     private val templateDao = db.templateDao()
+    private val historyDao = db.productHistoryDao()
 
     val allItems: Flow<List<Product>> = dao.getAll()
     val allTemplates: Flow<List<Template>> = templateDao.getAllTemplates()
@@ -17,24 +18,22 @@ class CompraRepository(private val db: AppDatabase) {
     suspend fun insert(prod: Product) {
         withContext(Dispatchers.IO) {
             try {
-                // Primero intenta actualizar si existe
                 val existing = dao.getByName(prod.name)
                 if (existing != null) {
-                    // Si existe, suma las cantidades
                     val updated = existing.copy(
                         quantity = existing.quantity + prod.quantity,
                         price = if (prod.price > 0) prod.price else existing.price
                     )
                     dao.update(updated)
                 } else {
-                    // Si no existe, inserta nuevo
                     dao.insert(prod)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                // Fallback: insertar normalmente
                 dao.insert(prod)
             }
+            // Guardar en historial con los valores que el usuario eligió
+            historyDao.upsert(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
         }
     }
 
@@ -53,8 +52,12 @@ class CompraRepository(private val db: AppDatabase) {
     suspend fun update(prod: Product) {
         withContext(Dispatchers.IO) {
             dao.update(prod)
+            historyDao.upsert(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
         }
     }
+
+    suspend fun searchHistory(query: String): List<ProductHistory> =
+        withContext(Dispatchers.IO) { historyDao.search(query) }
 
     suspend fun delete(name: String) {
         withContext(Dispatchers.IO) {

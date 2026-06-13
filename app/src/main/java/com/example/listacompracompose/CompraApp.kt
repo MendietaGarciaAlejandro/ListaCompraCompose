@@ -354,6 +354,7 @@ fun CompraApp(vm: CompraViewModel) {
 
     if (showInsert) {
         ProductFormDialog(
+            vm = vm,
             title = "Añadir producto",
             name = name,
             price = price,
@@ -380,6 +381,7 @@ fun CompraApp(vm: CompraViewModel) {
 
     if (showEdit) {
         ProductFormDialog(
+            vm = vm,
             title = "Editar producto",
             name = name,
             price = price,
@@ -445,6 +447,7 @@ fun CompraApp(vm: CompraViewModel) {
 
 // ── Formulario reutilizable Añadir/Editar ──────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProductFormDialog(
     title: String,
@@ -454,6 +457,7 @@ private fun ProductFormDialog(
     categoria: String?,
     isNewCat: Boolean,
     categories: List<String>,
+    vm: CompraViewModel,
     onNameChange: (String) -> Unit,
     onPriceChange: (String) -> Unit,
     onQtyChange: (String) -> Unit,
@@ -463,19 +467,70 @@ private fun ProductFormDialog(
     onDismiss: () -> Unit,
     confirmLabel: String
 ) {
+    var suggestions by remember { mutableStateOf<List<ProductHistory>>(emptyList()) }
+    var showSuggestions by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = onNameChange,
-                    label = { Text("Nombre *") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
-                )
+                // Campo nombre con sugerencias (ExposedDropdown mantiene el teclado abierto)
+                ExposedDropdownMenuBox(
+                    expanded = showSuggestions,
+                    onExpandedChange = { },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { value ->
+                            onNameChange(value)
+                            if (value.length >= 3) {
+                                scope.launch {
+                                    suggestions = vm.searchHistory(value)
+                                    showSuggestions = suggestions.isNotEmpty()
+                                }
+                            } else {
+                                suggestions = emptyList()
+                                showSuggestions = false
+                            }
+                        },
+                        label = { Text("Nombre *") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryEditable),
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = showSuggestions,
+                        onDismissRequest = { showSuggestions = false }
+                    ) {
+                        suggestions.forEach { suggestion ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(suggestion.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                        Text(
+                                            "€${"%.2f".format(suggestion.price)} · x${suggestion.quantity} · ${suggestion.category}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    onNameChange(suggestion.name)
+                                    onPriceChange(if (suggestion.price > 0) suggestion.price.toString() else "")
+                                    onQtyChange(suggestion.quantity.toString())
+                                    onCategoriaChange(suggestion.category)
+                                    onIsNewCatChange(false)
+                                    showSuggestions = false
+                                }
+                            )
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = price,

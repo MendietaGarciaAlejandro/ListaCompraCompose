@@ -63,10 +63,10 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
         repo.deleteAll(name)
     }
 
-    /**
-     * Devuelve la lista de categorías disponibles sin duplicados.
-     */
     fun getCategories(): List<String> = items.value.map { it.category }.distinct().sorted()
+
+    suspend fun searchHistory(query: String): List<ProductHistory> =
+        if (query.length < 3) emptyList() else repo.searchHistory(query)
 
 
 //    fun clearDatabase() = viewModelScope.launch {

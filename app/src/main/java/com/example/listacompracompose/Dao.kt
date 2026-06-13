@@ -8,7 +8,6 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
-// Dao.kt
 @Dao
 interface ProductDao {
     @Query("SELECT * FROM productos ORDER BY isChecked ASC, name COLLATE NOCASE ASC")
@@ -28,7 +27,13 @@ interface ProductDao {
 
     @Query("UPDATE productos SET isChecked = :isChecked WHERE name = :name")
     suspend fun updateCheckedStatus(name: String, isChecked: Boolean)
+}
 
-//    @Query("DELETE FROM productos")
-//    suspend fun deleteAllProducts()
+@Dao
+interface ProductHistoryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: ProductHistory)
+
+    @Query("SELECT * FROM historial_productos WHERE LOWER(name) LIKE LOWER(:query) || '%' ORDER BY name COLLATE NOCASE ASC LIMIT 6")
+    suspend fun search(query: String): List<ProductHistory>
 }

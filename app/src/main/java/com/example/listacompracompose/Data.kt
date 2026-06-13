@@ -9,6 +9,14 @@ data class Product(
     @PrimaryKey val name: String,
     val price: Double,
     var quantity: Int,
-    var isChecked: Boolean = false, // Nuevo campo para estado "tachado"
-    var category: String = "General" // Nueva propiedad para la categoría por defecto
+    var isChecked: Boolean = false,
+    var category: String = "General"
+)
+
+@Entity(tableName = "historial_productos")
+data class ProductHistory(
+    @PrimaryKey val name: String,
+    val price: Double,
+    val quantity: Int,
+    val category: String = "General"
 )
