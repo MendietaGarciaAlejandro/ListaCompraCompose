@@ -74,6 +74,8 @@ fun CompraApp(vm: CompraViewModel) {
     var showStatsScreen by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showReorderDialog by remember { mutableStateOf(false) }
+    var showAutoTemplateDialog by remember { mutableStateOf(false) }
+    var autoTemplateName by remember { mutableStateOf("") }
     var previewTemplate by remember { mutableStateOf<String?>(null) }
     var previewProducts by remember { mutableStateOf<List<Product>>(emptyList()) }
     var name by remember { mutableStateOf("") }
@@ -93,11 +95,57 @@ fun CompraApp(vm: CompraViewModel) {
 
     // Modo compras — pantalla completa independiente
     if (showShoppingMode) {
+        val allChecked = items.isNotEmpty() && items.all { it.isChecked }
         ShoppingModeScreen(
             items = items,
             onToggle = { vm.toggleCheckedStatus(it) },
-            onExit = { showShoppingMode = false }
+            onExit = { showShoppingMode = false },
+            onSaveAsTemplate = if (allChecked) {
+                {
+                    scope.launch {
+                        val alreadySaved = vm.currentListMatchesTemplate()
+                        if (!alreadySaved) {
+                            autoTemplateName = ""
+                            showAutoTemplateDialog = true
+                        }
+                    }
+                }
+            } else null
         )
+
+        if (showAutoTemplateDialog) {
+            AlertDialog(
+                onDismissRequest = { showAutoTemplateDialog = false },
+                title = { Text("Guardar plantilla") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Dale un nombre a esta lista para usarla como plantilla en el futuro.")
+                        OutlinedTextField(
+                            value = autoTemplateName,
+                            onValueChange = { autoTemplateName = it },
+                            label = { Text("Nombre de la plantilla") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            if (autoTemplateName.isNotBlank()) {
+                                vm.saveTemplate(autoTemplateName.trim())
+                                showAutoTemplateDialog = false
+                            }
+                        },
+                        enabled = autoTemplateName.isNotBlank()
+                    ) { Text("Guardar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAutoTemplateDialog = false }) { Text("Cancelar") }
+                }
+            )
+        }
+
         return
     }
 

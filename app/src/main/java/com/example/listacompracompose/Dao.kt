@@ -27,6 +27,9 @@ interface ProductDao {
 
     @Query("UPDATE productos SET isChecked = :isChecked WHERE name = :name")
     suspend fun updateCheckedStatus(name: String, isChecked: Boolean)
+
+    @Query("SELECT * FROM productos WHERE isChecked = 0 ORDER BY name COLLATE NOCASE ASC")
+    fun getPendingSync(): List<Product>
 }
 
 @Dao

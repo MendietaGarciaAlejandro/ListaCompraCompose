@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class CompraViewModel(application: Application) : AndroidViewModel(application) {
-    private val repo = CompraRepository(AppDatabase.getInstance(application))
+    private val repo = CompraRepository(AppDatabase.getInstance(application), application)
     val items = repo.allItems.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val templates = repo.allTemplates.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -94,4 +94,14 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
 
     // ── Estadísticas ──────────────────────────────────────────────────────────
     suspend fun getProductStats(): List<ProductStats> = repo.getProductStats()
+
+    // ── Plantillas automáticas ────────────────────────────────────────────────
+    suspend fun currentListMatchesTemplate(): Boolean {
+        val currentNames = items.value.map { it.name }.toSet()
+        if (currentNames.isEmpty()) return false
+        return templates.value.any { tpl ->
+            val tplNames = repo.loadTemplate(tpl.name).map { it.name }.toSet()
+            tplNames == currentNames
+        }
+    }
 }

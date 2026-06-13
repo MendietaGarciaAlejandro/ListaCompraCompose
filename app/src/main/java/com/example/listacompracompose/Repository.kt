@@ -7,11 +7,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 // Repository.kt
-class CompraRepository(private val db: AppDatabase) {
+class CompraRepository(private val db: AppDatabase, private val context: Context? = null) {
     private val dao = db.productDao()
     private val templateDao = db.templateDao()
     private val historyDao = db.productHistoryDao()
     private val purchaseLogDao = db.purchaseLogDao()
+
+    private fun notifyWidget() {
+        context?.let { ShoppingListWidget.notifyDataChanged(it) }
+    }
 
     val allItems: Flow<List<Product>> = dao.getAll()
     val allTemplates: Flow<List<Template>> = templateDao.getAllTemplates()
@@ -37,6 +41,7 @@ class CompraRepository(private val db: AppDatabase) {
             if (prod.price > 0) {
                 purchaseLogDao.insert(PurchaseLog(name = prod.name, price = prod.price, quantity = prod.quantity))
             }
+            notifyWidget()
         }
     }
 
@@ -95,6 +100,7 @@ class CompraRepository(private val db: AppDatabase) {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+            notifyWidget()
         }
     }
 
@@ -132,6 +138,7 @@ class CompraRepository(private val db: AppDatabase) {
     suspend fun deleteAll(name: String) {
         withContext(Dispatchers.IO) {
             dao.deleteByName(name)
+            notifyWidget()
         }
     }
 
@@ -141,6 +148,7 @@ class CompraRepository(private val db: AppDatabase) {
             product?.let {
                 dao.updateCheckedStatus(name, !it.isChecked)
             }
+            notifyWidget()
         }
     }
 

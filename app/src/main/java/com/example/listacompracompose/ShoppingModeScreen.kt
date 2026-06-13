@@ -21,7 +21,8 @@ import androidx.compose.ui.unit.dp
 fun ShoppingModeScreen(
     items: List<Product>,
     onToggle: (String) -> Unit,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    onSaveAsTemplate: (() -> Unit)? = null
 ) {
     val pending = items.filter { !it.isChecked }
     val done = items.count { it.isChecked }
@@ -107,6 +108,10 @@ fun ShoppingModeScreen(
                             )
                         }
                         Spacer(Modifier.height(8.dp))
+                        if (onSaveAsTemplate != null) {
+                            OutlinedButton(onClick = onSaveAsTemplate) { Text("Guardar como plantilla") }
+                            Spacer(Modifier.height(8.dp))
+                        }
                         Button(onClick = onExit) { Text("Volver") }
                     }
                 }
