@@ -5,12 +5,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.listacompracompose.ui.theme.ListaCompraComposeTheme
 
 class MainActivity : ComponentActivity() {
     private val vm: CompraViewModel by viewModels { CompraViewModel.Factory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContent {
             ListaCompraComposeTheme {
