@@ -1,41 +1,74 @@
-# Lista de Compra Compose
+# Lista de la Compra
 
-Una aplicación moderna de lista de compras desarrollada con Jetpack Compose para Android.
+App Android para gestionar la lista de la compra del día a día. Desarrollada en Kotlin con Jetpack Compose.
 
-## 🛠 Tecnologías Utilizadas
+## Requisitos
 
-- Kotlin
-- Jetpack Compose
-- Coroutines
-- AndroidX Core KTX
+- Android 8.0 (API 26) o superior
+- Android Studio para compilar
 
-## 📱 Requisitos del Sistema
+## Funcionalidades
 
-- Android Studio
-- SDK mínimo: API 26 (Android 8.0)
-- SDK objetivo: API 35
-- Java 11
+### Lista principal
+- Añadir productos con nombre, precio, cantidad y categoría
+- Categorías personalizables y reordenables (drag & drop)
+- Botones + / - para ajustar cantidad directamente desde la lista
+- Marcar productos como comprados
+- Editar o eliminar productos con opción de deshacer (Snackbar)
+- Importar lista escribiendo o pegando texto en formato libre (`leche x2`, `aceite 3.50€`, etc.)
 
-## 🚀 Características
+### Historial e inteligencia
+- Los productos se recuerdan automáticamente (nombre, precio, cantidad, categoría)
+- Autocompletado al escribir desde 3 caracteres
+- Productos favoritos marcados con estrella, accesibles sin escribir nada
+- Precio y cantidad se actualizan si han cambiado respecto al histórico
 
-- Interfaz de usuario moderna construida con Jetpack Compose
-- Diseño Material Design
-- Soporte para Android 8.0 y versiones superiores
+### Plantillas
+- Guardar la lista actual como plantilla para reutilizarla
+- Vista previa antes de cargar (opción de reemplazar o añadir a la lista actual)
+- Al completar una compra se ofrece guardar la lista como plantilla
 
-## 🔧 Configuración del Proyecto
+### Modo compras
+- Pantalla de compra rápida: muestra solo los productos pendientes agrupados por categoría
+- Progreso visual en tiempo real
+- Total del carrito visible mientras se marca
+- Al completar todos los items muestra pantalla de resumen
 
-1. Clona el repositorio
-2. Abre el proyecto en Android Studio
-3. Sincroniza el proyecto con los archivos Gradle
-4. Ejecuta la aplicación
+### Finalizar compra
+- Botón de finalizar que vacía la lista y registra la sesión de compra
+- Si quedan productos sin marcar avisa antes de continuar
 
-## 📄 Licencia
+### Estadísticas
+- Gráfico de barras con el gasto de los últimos 6 meses
+- Promedio mensual y promedio por compra
+- Contador de compras realizadas (se incrementa al finalizar, se contabiliza por mes)
+- Producto más comprado
+- Detalle por producto: precio último, medio, mínimo y máximo, tendencia respecto a la compra anterior
+- Exportar la lista actual en PDF
 
-Este proyecto está bajo la Licencia MIT.
+### Widget
+- Widget para la pantalla de inicio que muestra los productos pendientes
+- Se actualiza automáticamente al modificar la lista
+- Toca el widget para abrir la app directamente
 
-## ✍️ Autor
+### Recordatorios
+- Recordatorio semanal configurable (día y hora)
+- Solo notifica si hay productos en la lista
+- Se activa y configura desde Ajustes
+
+### Ajustes
+- Tema claro, oscuro o según el sistema
+- Reordenar categorías manualmente
+
+## Stack técnico
+
+- Kotlin + Jetpack Compose (Material 3)
+- Room (base de datos local, v9)
+- StateFlow + ViewModel
+- AppWidgetProvider para el widget
+- AlarmManager para recordatorios
+- SharedPreferences para preferencias de usuario
+
+## Autor
 
 Alejandro Mendieta García
-
----
-*Desarrollado con ❤️ usando Jetpack Compose*
