@@ -2,13 +2,17 @@
 package com.example.listacompracompose
 
 import android.app.Application
+import android.content.Context
 import android.database.sqlite.SQLiteConstraintException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -17,6 +21,19 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
     val items = repo.allItems.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val templates = repo.allTemplates.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    // ── Tema ──────────────────────────────────────────────────────────────────
+    private val prefs = application.getSharedPreferences("compra_settings", Context.MODE_PRIVATE)
+    private val _themeMode = MutableStateFlow(
+        ThemeMode.valueOf(prefs.getString("theme_mode", ThemeMode.SYSTEM.name)!!)
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        prefs.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    // ── Productos ─────────────────────────────────────────────────────────────
     fun insert(prod: Product) = viewModelScope.launch { repo.insert(prod) }
     fun update(prod: Product) = viewModelScope.launch { repo.update(prod) }
     fun deleteByName(name: String) = viewModelScope.launch { repo.delete(name) }
@@ -30,46 +47,51 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // ── Plantillas ────────────────────────────────────────────────────────────
     fun saveTemplate(name: String) = viewModelScope.launch { repo.saveTemplate(name, items.value) }
+    suspend fun getTemplateProducts(name: String): List<Product> = repo.loadTemplate(name)
     fun loadTemplate(name: String) = viewModelScope.launch {
         val list = repo.loadTemplate(name)
-        // clear current and re-insert loaded
         items.value.forEach { repo.delete(it.name) }
         list.forEach { repo.insert(it) }
     }
+    fun deleteTemplate(name: String) = viewModelScope.launch { repo.deleteTemplate(name) }
 
-    fun deleteTemplate(name: String) = viewModelScope.launch {
-        repo.deleteTemplate(name)
-    }
-
-    fun toggleCheckedStatus(name: String) = viewModelScope.launch {
-        repo.toggleCheckedStatus(name)
-    }
+    // ── Estado de items ───────────────────────────────────────────────────────
+    fun toggleCheckedStatus(name: String) = viewModelScope.launch { repo.toggleCheckedStatus(name) }
+    fun incrementQuantity(name: String) = viewModelScope.launch { repo.incrementQuantity(name) }
+    fun reduceQuantity(name: String) = viewModelScope.launch { repo.reduceQuantity(name) }
+    fun deleteAll(name: String) = viewModelScope.launch { repo.deleteAll(name) }
 
     suspend fun insertWithCheck(prod: Product): Boolean {
-        return try {
-            repo.insert(prod)
-            true
-        } catch (e: SQLiteConstraintException) {
-            false // Producto ya existe
-        }
-    }
-
-    fun reduceQuantity(name: String) = viewModelScope.launch {
-        repo.reduceQuantity(name)
-    }
-
-    fun deleteAll(name: String) = viewModelScope.launch {
-        repo.deleteAll(name)
+        return try { repo.insert(prod); true } catch (e: SQLiteConstraintException) { false }
     }
 
     fun getCategories(): List<String> = items.value.map { it.category }.distinct().sorted()
 
-    suspend fun searchHistory(query: String): List<ProductHistory> =
-        if (query.length < 3) emptyList() else repo.searchHistory(query)
+    // ── Orden de categorías ───────────────────────────────────────────────────
+    private val _categoryOrder = MutableStateFlow(
+        prefs.getString("category_order", "")
+            ?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+    )
+    val categoryOrder: StateFlow<List<String>> = _categoryOrder.asStateFlow()
 
+    fun saveCategoryOrder(order: List<String>) {
+        _categoryOrder.value = order
+        prefs.edit().putString("category_order", order.joinToString(",")).apply()
+    }
 
-//    fun clearDatabase() = viewModelScope.launch {
-//        repo.clearDatabase()
-//    }
+    // ── Historial y favoritos ─────────────────────────────────────────────────
+    suspend fun getSuggestions(query: String): List<ProductHistory> =
+        if (query.length < 3) repo.getFavorites()
+        else repo.searchHistory(query)
+
+    suspend fun getFavorites(): List<ProductHistory> = repo.getFavorites()
+
+    fun toggleFavorite(entry: ProductHistory) = viewModelScope.launch {
+        repo.setFavorite(entry.name, !entry.isFavorite)
+    }
+
+    // ── Estadísticas ──────────────────────────────────────────────────────────
+    suspend fun getProductStats(): List<ProductStats> = repo.getProductStats()
 }

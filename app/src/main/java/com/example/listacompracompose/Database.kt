@@ -10,14 +10,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Product::class, Template::class, ProductHistory::class],
-    version = 6, exportSchema = false
+    entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class],
+    version = 8, exportSchema = false
 )
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun templateDao(): TemplateDao
     abstract fun productHistoryDao(): ProductHistoryDao
+    abstract fun purchaseLogDao(): PurchaseLogDao
 
     companion object {
         @Volatile
@@ -62,6 +63,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migración v6 -> v7: añade columna isFavorite al historial
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE historial_productos ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        // Migración v7 -> v8: crea tabla purchase_log
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS purchase_log (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, price REAL NOT NULL, quantity INTEGER NOT NULL, timestamp INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -69,7 +86,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

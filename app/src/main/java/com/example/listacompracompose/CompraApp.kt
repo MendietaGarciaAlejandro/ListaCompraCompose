@@ -4,6 +4,7 @@ package com.example.listacompracompose
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,15 +18,26 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
@@ -37,7 +49,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun CompraApp(vm: CompraViewModel) {
     val items by vm.items.collectAsState()
-    val groupedItems = items.groupBy { it.category }
+    val themeMode by vm.themeMode.collectAsState()
+    val categoryOrder by vm.categoryOrder.collectAsState()
+
+    val groupedItems = remember(items) { items.groupBy { it.category } }
+    val orderedCategories = remember(groupedItems, categoryOrder) {
+        val known = groupedItems.keys
+        val ordered = categoryOrder.filter { it in known }
+        val unordered = known.filter { it !in categoryOrder }
+        ordered + unordered
+    }
     val expandedCategories = remember { mutableStateMapOf<String, Boolean>() }
 
     val templates by vm.templates.collectAsState()
@@ -49,6 +70,12 @@ fun CompraApp(vm: CompraViewModel) {
     var showEdit by remember { mutableStateOf(false) }
     var showDeleteOptions by remember { mutableStateOf(false) }
     var showClearAllDialog by remember { mutableStateOf(false) }
+    var showShoppingMode by remember { mutableStateOf(false) }
+    var showStatsScreen by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+    var showReorderDialog by remember { mutableStateOf(false) }
+    var previewTemplate by remember { mutableStateOf<String?>(null) }
+    var previewProducts by remember { mutableStateOf<List<Product>>(emptyList()) }
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var qty by remember { mutableStateOf("") }
@@ -58,6 +85,21 @@ fun CompraApp(vm: CompraViewModel) {
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    if (showStatsScreen) {
+        StatsScreen(vm = vm, onBack = { showStatsScreen = false })
+        return
+    }
+
+    // Modo compras — pantalla completa independiente
+    if (showShoppingMode) {
+        ShoppingModeScreen(
+            items = items,
+            onToggle = { vm.toggleCheckedStatus(it) },
+            onExit = { showShoppingMode = false }
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -82,6 +124,15 @@ fun CompraApp(vm: CompraViewModel) {
                     containerColor = MaterialTheme.colorScheme.primary
                 ),
                 actions = {
+                    IconButton(onClick = { showShoppingMode = true }, enabled = items.any { !it.isChecked }) {
+                        Icon(Icons.Default.ShoppingCart, contentDescription = "Modo compras", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = { showStatsScreen = true }) {
+                        Icon(Icons.Default.BarChart, contentDescription = "Estadísticas", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = { showThemeDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Ajustes", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
                     Box(
                         modifier = Modifier
                             .size(48.dp)
@@ -187,7 +238,8 @@ fun CompraApp(vm: CompraViewModel) {
                 }
             } else {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    groupedItems.forEach { (category, products) ->
+                    orderedCategories.forEach { category ->
+                        val products = groupedItems[category] ?: return@forEach
                         item {
                             Surface(
                                 modifier = Modifier
@@ -234,6 +286,8 @@ fun CompraApp(vm: CompraViewModel) {
                                 ProductItemRow(
                                     product = prod,
                                     onToggle = { vm.toggleCheckedStatus(prod.name) },
+                                    onIncrement = { vm.incrementQuantity(prod.name) },
+                                    onDecrement = { vm.reduceQuantity(prod.name) },
                                     onEdit = {
                                         currentProduct = prod
                                         name = prod.name
@@ -326,27 +380,94 @@ fun CompraApp(vm: CompraViewModel) {
             onDismissRequest = { showLoadDialog = false },
             title = { Text("Cargar plantilla") },
             text = {
-                LazyColumn {
-                    items(templates) { tpl ->
-                        ListItem(
-                            headlineContent = { Text(tpl.name) },
-                            trailingContent = {
-                                IconButton(onClick = { vm.deleteTemplate(tpl.name) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Eliminar")
+                if (templates.isEmpty()) {
+                    Text("No tienes plantillas guardadas.", color = MaterialTheme.colorScheme.outline)
+                } else {
+                    LazyColumn {
+                        items(templates) { tpl ->
+                            ListItem(
+                                headlineContent = { Text(tpl.name, fontWeight = FontWeight.Medium) },
+                                supportingContent = { Text("${tpl.products.size} productos", style = MaterialTheme.typography.bodySmall) },
+                                trailingContent = {
+                                    IconButton(onClick = { vm.deleteTemplate(tpl.name) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                modifier = Modifier.clickable {
+                                    scope.launch {
+                                        previewProducts = vm.getTemplateProducts(tpl.name)
+                                        previewTemplate = tpl.name
+                                    }
                                 }
-                            },
-                            modifier = Modifier.clickable {
-                                vm.loadTemplate(tpl.name)
-                                showLoadDialog = false
-                            }
-                        )
-                        HorizontalDivider()
+                            )
+                            HorizontalDivider()
+                        }
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showLoadDialog = false }) { Text("Cerrar") }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        )
+    }
+
+    // Vista previa de plantilla antes de cargar
+    previewTemplate?.let { tplName ->
+        AlertDialog(
+            onDismissRequest = { previewTemplate = null },
+            title = { Text(tplName, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column {
+                    Text(
+                        "${previewProducts.size} productos · €${"%.2f".format(previewProducts.sumOf { it.price * it.quantity })} estimado",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                        items(previewProducts) { prod ->
+                            ListItem(
+                                headlineContent = { Text(prod.name) },
+                                supportingContent = { Text("x${prod.quantity} · €${"%.2f".format(prod.price)}") },
+                                trailingContent = {
+                                    Text(
+                                        prod.category,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "¿Reemplazar la lista actual o añadir a lo que ya hay?",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    vm.loadTemplate(tplName)
+                    previewTemplate = null
+                    showLoadDialog = false
+                }) { Text("Reemplazar") }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { previewTemplate = null }) { Text("Cancelar") }
+                    FilledTonalButton(onClick = {
+                        scope.launch {
+                            previewProducts.forEach { vm.insert(it) }
+                        }
+                        previewTemplate = null
+                        showLoadDialog = false
+                    }) { Text("Añadir") }
+                }
             },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         )
@@ -427,6 +548,59 @@ fun CompraApp(vm: CompraViewModel) {
         )
     }
 
+    // Diálogo de ajustes (tema + acciones)
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Ajustes", fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column {
+                    Text("Apariencia", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(4.dp))
+                    listOf(
+                        ThemeMode.SYSTEM to "Seguir el sistema",
+                        ThemeMode.LIGHT  to "Claro",
+                        ThemeMode.DARK   to "Oscuro"
+                    ).forEach { (mode, label) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { vm.setThemeMode(mode) }.padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = themeMode == mode, onClick = { vm.setThemeMode(mode) })
+                            Spacer(Modifier.width(8.dp))
+                            Text(label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                    if (orderedCategories.size > 1) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                        Text("Categorías", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedButton(
+                            onClick = { showThemeDialog = false; showReorderDialog = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Reorder, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ordenar categorías")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) { Text("Cerrar") }
+            }
+        )
+    }
+
+    // Diálogo de reorden de categorías con drag & drop
+    if (showReorderDialog) {
+        CategoryReorderDialog(
+            categories = orderedCategories,
+            onReorder = { vm.saveCategoryOrder(it) },
+            onDismiss = { showReorderDialog = false }
+        )
+    }
+
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
@@ -443,6 +617,80 @@ fun CompraApp(vm: CompraViewModel) {
             }
         )
     }
+}
+
+// ── Reorden de categorías con drag & drop ─────────────────────────────────
+
+@Composable
+private fun CategoryReorderDialog(
+    categories: List<String>,
+    onReorder: (List<String>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val list = remember(categories) { mutableStateListOf(*categories.toTypedArray()) }
+    var draggedCategory by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val itemHeightPx = with(LocalDensity.current) { 56.dp.toPx() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ordenar categorías", fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column {
+                Text(
+                    "Mantén pulsado el ícono ≡ y arrastra para reordenar",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(12.dp))
+                list.forEach { category ->
+                    val isDragging = category == draggedCategory
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .zIndex(if (isDragging) 1f else 0f)
+                            .graphicsLayer { translationY = if (isDragging) dragOffsetY else 0f; shadowElevation = if (isDragging) 8f else 0f }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.DragHandle,
+                            contentDescription = "Arrastrar",
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier
+                                .padding(end = 16.dp)
+                                .pointerInput(category) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = { draggedCategory = category; dragOffsetY = 0f },
+                                        onDrag = { _, amount ->
+                                            dragOffsetY += amount.y
+                                            val current = list.indexOfFirst { it == draggedCategory }
+                                            if (current == -1) return@detectDragGesturesAfterLongPress
+                                            if (dragOffsetY > itemHeightPx / 2 && current < list.size - 1) {
+                                                list.add(current + 1, list.removeAt(current))
+                                                dragOffsetY -= itemHeightPx
+                                                onReorder(list.toList())
+                                            } else if (dragOffsetY < -itemHeightPx / 2 && current > 0) {
+                                                list.add(current - 1, list.removeAt(current))
+                                                dragOffsetY += itemHeightPx
+                                                onReorder(list.toList())
+                                            }
+                                        },
+                                        onDragEnd = { draggedCategory = null; dragOffsetY = 0f },
+                                        onDragCancel = { draggedCategory = null; dragOffsetY = 0f }
+                                    )
+                                }
+                        )
+                        Text(category, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    }
+                    if (list.last() != category) HorizontalDivider()
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) { Text("Listo") }
+        }
+    )
 }
 
 // ── Formulario reutilizable Añadir/Editar ──────────────────────────────────
@@ -469,7 +717,18 @@ private fun ProductFormDialog(
 ) {
     var suggestions by remember { mutableStateOf<List<ProductHistory>>(emptyList()) }
     var showSuggestions by remember { mutableStateOf(false) }
+    var isFavoritesMode by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // Cargar favoritos al abrir el formulario
+    LaunchedEffect(Unit) {
+        val favs = vm.getFavorites()
+        if (favs.isNotEmpty()) {
+            suggestions = favs
+            isFavoritesMode = true
+            showSuggestions = true
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -486,14 +745,11 @@ private fun ProductFormDialog(
                         value = name,
                         onValueChange = { value ->
                             onNameChange(value)
-                            if (value.length >= 3) {
-                                scope.launch {
-                                    suggestions = vm.searchHistory(value)
-                                    showSuggestions = suggestions.isNotEmpty()
-                                }
-                            } else {
-                                suggestions = emptyList()
-                                showSuggestions = false
+                            scope.launch {
+                                val results = vm.getSuggestions(value)
+                                suggestions = results
+                                isFavoritesMode = value.length < 3
+                                showSuggestions = results.isNotEmpty()
                             }
                         },
                         label = { Text("Nombre *") },
@@ -507,6 +763,20 @@ private fun ProductFormDialog(
                         expanded = showSuggestions,
                         onDismissRequest = { showSuggestions = false }
                     ) {
+                        if (isFavoritesMode && suggestions.isNotEmpty()) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "⭐ Favoritos",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                },
+                                onClick = {},
+                                enabled = false
+                            )
+                        }
                         suggestions.forEach { suggestion ->
                             DropdownMenuItem(
                                 text = {
@@ -516,6 +786,26 @@ private fun ProductFormDialog(
                                             "€${"%.2f".format(suggestion.price)} · x${suggestion.quantity} · ${suggestion.category}",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                },
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = {
+                                            // Actualización optimista: la UI responde al instante
+                                            suggestions = suggestions.map {
+                                                if (it.name == suggestion.name) it.copy(isFavorite = !it.isFavorite) else it
+                                            }
+                                            vm.toggleFavorite(suggestion)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            if (suggestion.isFavorite) Icons.Default.Star else Icons.Outlined.StarOutline,
+                                            contentDescription = if (suggestion.isFavorite) "Quitar favorito" else "Marcar favorito",
+                                            tint = if (suggestion.isFavorite) MaterialTheme.colorScheme.tertiary
+                                                   else MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
                                 },
@@ -611,6 +901,8 @@ private fun ProductFormDialog(
 fun ProductItemRow(
     product: Product,
     onToggle: () -> Unit,
+    onIncrement: () -> Unit,
+    onDecrement: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -624,7 +916,7 @@ fun ProductItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                .padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -640,27 +932,54 @@ fun ProductItemRow(
                     color = if (product.isChecked) MaterialTheme.colorScheme.outline
                             else MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = "€${"%.2f".format(product.price)} · x${product.quantity}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    textDecoration = if (product.isChecked) TextDecoration.LineThrough else null
-                )
+                if (product.price > 0) {
+                    Text(
+                        text = "€${"%.2f".format(product.price)} · subtotal €${"%.2f".format(product.price * product.quantity)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        textDecoration = if (product.isChecked) TextDecoration.LineThrough else null
+                    )
+                }
             }
-            IconButton(onClick = onEdit) {
+            // Control de cantidad
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                FilledTonalIconButton(
+                    onClick = onDecrement,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Reducir", modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    text = "${product.quantity}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.widthIn(min = 24.dp),
+                    textAlign = TextAlign.Center
+                )
+                FilledTonalIconButton(
+                    onClick = onIncrement,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Aumentar", modifier = Modifier.size(18.dp))
+                }
+            }
+            IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Default.Edit,
                     contentDescription = "Editar",
                     tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
-            IconButton(onClick = onDelete) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = "Eliminar",
                     tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

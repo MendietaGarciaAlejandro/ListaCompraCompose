@@ -34,6 +34,21 @@ interface ProductHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entry: ProductHistory)
 
-    @Query("SELECT * FROM historial_productos WHERE LOWER(name) LIKE LOWER(:query) || '%' ORDER BY name COLLATE NOCASE ASC LIMIT 6")
+    @Query("SELECT * FROM historial_productos WHERE LOWER(name) LIKE LOWER(:query) || '%' ORDER BY isFavorite DESC, name COLLATE NOCASE ASC LIMIT 6")
     suspend fun search(query: String): List<ProductHistory>
+
+    @Query("SELECT * FROM historial_productos WHERE isFavorite = 1 ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getFavorites(): List<ProductHistory>
+
+    @Query("UPDATE historial_productos SET isFavorite = :isFavorite WHERE name = :name")
+    suspend fun setFavorite(name: String, isFavorite: Boolean)
+}
+
+@Dao
+interface PurchaseLogDao {
+    @Insert
+    suspend fun insert(log: PurchaseLog)
+
+    @Query("SELECT * FROM purchase_log ORDER BY timestamp DESC")
+    suspend fun getAllLogs(): List<PurchaseLog>
 }
