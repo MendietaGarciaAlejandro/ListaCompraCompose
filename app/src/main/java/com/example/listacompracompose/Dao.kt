@@ -45,6 +45,9 @@ interface ProductHistoryDao {
 
     @Query("UPDATE historial_productos SET isFavorite = :isFavorite WHERE name = :name")
     suspend fun setFavorite(name: String, isFavorite: Boolean)
+
+    @Query("SELECT * FROM historial_productos WHERE LOWER(name) = LOWER(:name) LIMIT 1")
+    suspend fun getByName(name: String): ProductHistory?
 }
 
 @Dao
@@ -54,4 +57,16 @@ interface PurchaseLogDao {
 
     @Query("SELECT * FROM purchase_log ORDER BY timestamp DESC")
     suspend fun getAllLogs(): List<PurchaseLog>
+}
+
+@Dao
+interface ShoppingSessionDao {
+    @Insert
+    suspend fun insert(session: ShoppingSession)
+
+    @Query("SELECT * FROM shopping_sessions ORDER BY timestamp DESC")
+    suspend fun getAll(): List<ShoppingSession>
+
+    @Query("SELECT COUNT(*) FROM shopping_sessions WHERE timestamp >= :from AND timestamp < :to")
+    suspend fun countInRange(from: Long, to: Long): Int
 }

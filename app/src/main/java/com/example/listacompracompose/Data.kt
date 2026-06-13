@@ -46,3 +46,28 @@ data class ProductStats(
 ) {
     val trend: Double get() = if (prevPrice != null) lastPrice - prevPrice else 0.0
 }
+
+data class MonthlyStats(
+    val year: Int,
+    val month: Int,       // 1-12
+    val totalSpent: Double,
+    val tripCount: Int,   // distinct shopping days
+    val itemCount: Int    // total units purchased
+)
+
+@androidx.room.Entity(tableName = "shopping_sessions")
+data class ShoppingSession(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val itemCount: Int = 0,
+    val totalSpent: Double = 0.0
+)
+
+data class GlobalStats(
+    val totalSpent: Double,
+    val totalTrips: Int,
+    val avgSpentPerMonth: Double,
+    val avgSpentPerTrip: Double,
+    val mostBoughtProduct: String?,
+    val monthlyBreakdown: List<MonthlyStats>  // últimos 6 meses, cronológico
+)

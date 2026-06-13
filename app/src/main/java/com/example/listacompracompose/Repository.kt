@@ -12,6 +12,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     private val templateDao = db.templateDao()
     private val historyDao = db.productHistoryDao()
     private val purchaseLogDao = db.purchaseLogDao()
+    private val sessionDao = db.shoppingSessionDao()
 
     private fun notifyWidget() {
         context?.let { ShoppingListWidget.notifyDataChanged(it) }
@@ -37,7 +38,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
                 e.printStackTrace()
                 dao.insert(prod)
             }
-            historyDao.upsert(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
+            upsertHistory(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
             if (prod.price > 0) {
                 purchaseLogDao.insert(PurchaseLog(name = prod.name, price = prod.price, quantity = prod.quantity))
             }
@@ -50,7 +51,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     }
 
     suspend fun loadTemplate(name: String): List<Product> = withContext(Dispatchers.IO) {
-        templateDao.getTemplate(name)?.products ?: emptyList()
+        templateDao.getTemplate(name)?.products?.map { it.copy(isChecked = false) } ?: emptyList()
     }
 
     suspend fun deleteTemplate(name: String) = withContext(Dispatchers.IO) {
@@ -60,8 +61,13 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     suspend fun update(prod: Product) {
         withContext(Dispatchers.IO) {
             dao.update(prod)
-            historyDao.upsert(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
+            upsertHistory(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
         }
+    }
+
+    private suspend fun upsertHistory(entry: ProductHistory) {
+        val existing = historyDao.getByName(entry.name)
+        historyDao.upsert(entry.copy(isFavorite = existing?.isFavorite ?: false))
     }
 
     suspend fun searchHistory(query: String): List<ProductHistory> =
@@ -72,6 +78,69 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
 
     suspend fun setFavorite(name: String, isFavorite: Boolean) =
         withContext(Dispatchers.IO) { historyDao.setFavorite(name, isFavorite) }
+
+    suspend fun recordShoppingSession(items: List<Product>) = withContext(Dispatchers.IO) {
+        val itemCount = items.sumOf { it.quantity }
+        val totalSpent = items.sumOf { it.price * it.quantity }
+        sessionDao.insert(ShoppingSession(itemCount = itemCount, totalSpent = totalSpent))
+    }
+
+    suspend fun getGlobalStats(): GlobalStats = withContext(Dispatchers.IO) {
+        val logs = purchaseLogDao.getAllLogs()
+        val sessions = sessionDao.getAll()
+        if (logs.isEmpty() && sessions.isEmpty()) return@withContext GlobalStats(0.0, 0, 0.0, 0.0, null, emptyList())
+
+        val cal = java.util.Calendar.getInstance()
+        val totalTrips = sessions.size
+        val totalSpent = sessions.sumOf { it.totalSpent }.takeIf { it > 0 }
+            ?: logs.sumOf { it.price * it.quantity }
+
+        // Monthly breakdown using sessions for trip count, logs for spend
+        val sessionsByMonth = sessions.groupBy { s ->
+            cal.timeInMillis = s.timestamp
+            Pair(cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1)
+        }
+        val logsByMonth = logs.groupBy { log ->
+            cal.timeInMillis = log.timestamp
+            Pair(cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1)
+        }
+
+        val monthlyBreakdown = (0..5).map { offset ->
+            val c = java.util.Calendar.getInstance().apply { add(java.util.Calendar.MONTH, -offset) }
+            val y = c.get(java.util.Calendar.YEAR)
+            val m = c.get(java.util.Calendar.MONTH) + 1
+            val key = Pair(y, m)
+            val monthSessions = sessionsByMonth[key] ?: emptyList()
+            val monthLogs = logsByMonth[key] ?: emptyList()
+            // Use session totalSpent if available, else sum logs
+            val monthSpent = if (monthSessions.isNotEmpty()) monthSessions.sumOf { it.totalSpent }
+                             else monthLogs.sumOf { it.price * it.quantity }
+            MonthlyStats(
+                year = y, month = m,
+                totalSpent = monthSpent,
+                tripCount = monthSessions.size,
+                itemCount = monthSessions.sumOf { it.itemCount }.takeIf { it > 0 }
+                            ?: monthLogs.sumOf { it.quantity }
+            )
+        }.reversed()
+
+        val activeMonths = monthlyBreakdown.count { it.totalSpent > 0 }.coerceAtLeast(1)
+        val avgPerMonth = monthlyBreakdown.sumOf { it.totalSpent } / activeMonths
+        val avgPerTrip = if (totalTrips > 0) totalSpent / totalTrips else 0.0
+
+        val mostBought = logs.groupBy { it.name }
+            .mapValues { (_, v) -> v.sumOf { it.quantity } }
+            .maxByOrNull { it.value }?.key
+
+        GlobalStats(
+            totalSpent = totalSpent,
+            totalTrips = totalTrips,
+            avgSpentPerMonth = avgPerMonth,
+            avgSpentPerTrip = avgPerTrip,
+            mostBoughtProduct = mostBought,
+            monthlyBreakdown = monthlyBreakdown
+        )
+    }
 
     suspend fun getProductStats(): List<ProductStats> = withContext(Dispatchers.IO) {
         val logs = purchaseLogDao.getAllLogs()

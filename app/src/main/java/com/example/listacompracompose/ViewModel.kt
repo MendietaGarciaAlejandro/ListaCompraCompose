@@ -94,6 +94,13 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
 
     // ── Estadísticas ──────────────────────────────────────────────────────────
     suspend fun getProductStats(): List<ProductStats> = repo.getProductStats()
+    suspend fun getGlobalStats(): GlobalStats = repo.getGlobalStats()
+
+    fun finalizeShoppingTrip(items: List<Product>) = viewModelScope.launch {
+        repo.recordShoppingSession(items)
+        items.forEach { repo.delete(it.name) }
+        ShoppingListWidget.notifyDataChanged(getApplication())
+    }
 
     // ── Plantillas automáticas ────────────────────────────────────────────────
     suspend fun currentListMatchesTemplate(): Boolean {

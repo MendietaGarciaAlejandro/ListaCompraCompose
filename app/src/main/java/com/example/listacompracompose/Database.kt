@@ -10,8 +10,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class],
-    version = 8, exportSchema = false
+    entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class, ShoppingSession::class],
+    version = 9, exportSchema = false
 )
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -19,6 +19,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun templateDao(): TemplateDao
     abstract fun productHistoryDao(): ProductHistoryDao
     abstract fun purchaseLogDao(): PurchaseLogDao
+    abstract fun shoppingSessionDao(): ShoppingSessionDao
 
     companion object {
         @Volatile
@@ -79,6 +80,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migración v8 -> v9: crea tabla shopping_sessions
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS shopping_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, timestamp INTEGER NOT NULL, itemCount INTEGER NOT NULL DEFAULT 0, totalSpent REAL NOT NULL DEFAULT 0.0)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -86,7 +96,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance
