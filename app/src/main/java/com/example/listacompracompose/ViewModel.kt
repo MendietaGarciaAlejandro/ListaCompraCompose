@@ -17,9 +17,28 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class CompraViewModel(application: Application) : AndroidViewModel(application) {
-    private val repo = CompraRepository(AppDatabase.getInstance(application), application)
+    private val db = AppDatabase.getInstance(application)
+    private val repo = CompraRepository(db, application)
     val items = repo.allItems.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val templates = repo.allTemplates.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // ── Sincronización con Supabase (Realtime + polling de seguridad) ────────
+    private val realtime = RealtimeManager(db)
+
+    init {
+        viewModelScope.launch { repo.syncNow() }
+        SyncWorker.schedule(application)
+        realtime.start()
+        NetworkMonitor(application).observe {
+            viewModelScope.launch { repo.syncNow() }
+            realtime.reconnectNow()
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        realtime.stop()
+    }
 
     // ── Tema ──────────────────────────────────────────────────────────────────
     private val prefs = application.getSharedPreferences("compra_settings", Context.MODE_PRIVATE)

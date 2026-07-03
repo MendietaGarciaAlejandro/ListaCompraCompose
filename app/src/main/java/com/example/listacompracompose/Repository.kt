@@ -13,41 +13,53 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     private val historyDao = db.productHistoryDao()
     private val purchaseLogDao = db.purchaseLogDao()
     private val sessionDao = db.shoppingSessionDao()
+    private val sync = SyncManager(db)
 
     private fun notifyWidget() {
         context?.let { ShoppingListWidget.notifyDataChanged(it) }
     }
+
+    suspend fun syncNow() = sync.reconcile()
 
     val allItems: Flow<List<Product>> = dao.getAll()
     val allTemplates: Flow<List<Template>> = templateDao.getAllTemplates()
 
     suspend fun insert(prod: Product) {
         withContext(Dispatchers.IO) {
+            var finalProduct = prod
             try {
                 val existing = dao.getByName(prod.name)
                 if (existing != null) {
                     val updated = existing.copy(
                         quantity = existing.quantity + prod.quantity,
-                        price = if (prod.price > 0) prod.price else existing.price
+                        price = if (prod.price > 0) prod.price else existing.price,
+                        updatedAt = System.currentTimeMillis()
                     )
                     dao.update(updated)
+                    finalProduct = updated
                 } else {
-                    dao.insert(prod)
+                    finalProduct = prod.copy(updatedAt = System.currentTimeMillis())
+                    dao.insert(finalProduct)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                dao.insert(prod)
+                finalProduct = prod.copy(updatedAt = System.currentTimeMillis())
+                dao.insert(finalProduct)
             }
             upsertHistory(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
             if (prod.price > 0) {
-                purchaseLogDao.insert(PurchaseLog(name = prod.name, price = prod.price, quantity = prod.quantity))
+                val logId = purchaseLogDao.insert(PurchaseLog(name = prod.name, price = prod.price, quantity = prod.quantity))
+                sync.pushPurchaseLog(PurchaseLog(id = logId, name = prod.name, price = prod.price, quantity = prod.quantity))
             }
             notifyWidget()
+            sync.pushProduct(finalProduct)
         }
     }
 
     suspend fun saveTemplate(name: String, products: List<Product>) = withContext(Dispatchers.IO) {
-        templateDao.insertTemplate(Template(name, products))
+        val template = Template(name, products, updatedAt = System.currentTimeMillis())
+        templateDao.insertTemplate(template)
+        sync.pushTemplate(template)
     }
 
     suspend fun loadTemplate(name: String): List<Product> = withContext(Dispatchers.IO) {
@@ -56,18 +68,23 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
 
     suspend fun deleteTemplate(name: String) = withContext(Dispatchers.IO) {
         templateDao.deleteTemplate(name)
+        sync.pushTemplateDelete(name)
     }
 
     suspend fun update(prod: Product) {
         withContext(Dispatchers.IO) {
-            dao.update(prod)
+            val updated = prod.copy(updatedAt = System.currentTimeMillis())
+            dao.update(updated)
             upsertHistory(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
+            sync.pushProduct(updated)
         }
     }
 
     private suspend fun upsertHistory(entry: ProductHistory) {
         val existing = historyDao.getByName(entry.name)
-        historyDao.upsert(entry.copy(isFavorite = existing?.isFavorite ?: false))
+        val merged = entry.copy(isFavorite = existing?.isFavorite ?: false, updatedAt = System.currentTimeMillis())
+        historyDao.upsert(merged)
+        sync.pushProductHistory(merged)
     }
 
     suspend fun searchHistory(query: String): List<ProductHistory> =
@@ -76,13 +93,18 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     suspend fun getFavorites(): List<ProductHistory> =
         withContext(Dispatchers.IO) { historyDao.getFavorites() }
 
-    suspend fun setFavorite(name: String, isFavorite: Boolean) =
-        withContext(Dispatchers.IO) { historyDao.setFavorite(name, isFavorite) }
+    suspend fun setFavorite(name: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        val updatedAt = System.currentTimeMillis()
+        historyDao.setFavorite(name, isFavorite, updatedAt)
+        historyDao.getByName(name)?.let { sync.pushProductHistory(it) }
+    }
 
     suspend fun recordShoppingSession(items: List<Product>) = withContext(Dispatchers.IO) {
         val itemCount = items.sumOf { it.quantity }
         val totalSpent = items.sumOf { it.price * it.quantity }
-        sessionDao.insert(ShoppingSession(itemCount = itemCount, totalSpent = totalSpent))
+        val session = ShoppingSession(itemCount = itemCount, totalSpent = totalSpent)
+        val id = sessionDao.insert(session)
+        sync.pushShoppingSession(session.copy(id = id))
     }
 
     suspend fun getGlobalStats(): GlobalStats = withContext(Dispatchers.IO) {
@@ -170,6 +192,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
                 e.printStackTrace()
             }
             notifyWidget()
+            sync.pushProductDelete(name)
         }
     }
 
@@ -183,12 +206,14 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
                 } else {
                     println("Producto encontrado: ${product.name}, cantidad: ${product.quantity}")
                     if (product.quantity > 1) {
-                        val updated = product.copy(quantity = product.quantity - 1)
+                        val updated = product.copy(quantity = product.quantity - 1, updatedAt = System.currentTimeMillis())
                         dao.update(updated)
                         println("Cantidad reducida a: ${updated.quantity}")
+                        sync.pushProduct(updated)
                     } else {
                         dao.deleteByName(name)
                         println("Producto eliminado")
+                        sync.pushProductDelete(name)
                     }
                 }
             } catch (e: Exception) {
@@ -200,7 +225,11 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     suspend fun incrementQuantity(name: String) {
         withContext(Dispatchers.IO) {
             val product = dao.getByName(name)
-            product?.let { dao.update(it.copy(quantity = it.quantity + 1)) }
+            product?.let {
+                val updated = it.copy(quantity = it.quantity + 1, updatedAt = System.currentTimeMillis())
+                dao.update(updated)
+                sync.pushProduct(updated)
+            }
         }
     }
 
@@ -208,6 +237,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
         withContext(Dispatchers.IO) {
             dao.deleteByName(name)
             notifyWidget()
+            sync.pushProductDelete(name)
         }
     }
 
@@ -215,7 +245,9 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
         withContext(Dispatchers.IO) {
             val product = dao.getByName(name)
             product?.let {
-                dao.updateCheckedStatus(name, !it.isChecked)
+                val updatedAt = System.currentTimeMillis()
+                dao.updateCheckedStatus(name, !it.isChecked, updatedAt)
+                sync.pushProduct(it.copy(isChecked = !it.isChecked, updatedAt = updatedAt))
             }
             notifyWidget()
         }

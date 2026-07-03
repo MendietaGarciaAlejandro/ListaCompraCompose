@@ -8,5 +8,6 @@ import androidx.room.TypeConverters
 @TypeConverters(ProductListConverter::class)
 data class Template(
     @PrimaryKey val name: String,
-    val products: List<Product>
+    val products: List<Product>,
+    val updatedAt: Long = System.currentTimeMillis()
 )

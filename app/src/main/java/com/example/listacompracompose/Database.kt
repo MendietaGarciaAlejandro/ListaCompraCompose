@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class, ShoppingSession::class],
-    version = 9, exportSchema = false
+    version = 10, exportSchema = false
 )
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -89,6 +89,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migración v9 -> v10: columnas para sincronización con Supabase
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                val now = System.currentTimeMillis()
+                database.execSQL("ALTER TABLE productos ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT $now")
+                database.execSQL("ALTER TABLE historial_productos ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT $now")
+                database.execSQL("ALTER TABLE plantillas ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT $now")
+                database.execSQL("ALTER TABLE purchase_log ADD COLUMN remoteId TEXT")
+                database.execSQL("ALTER TABLE shopping_sessions ADD COLUMN remoteId TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -96,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance
