@@ -102,7 +102,8 @@ class RealtimeManager(private val db: AppDatabase) {
                     "postgres_changes" to listOf(
                         mapOf("event" to "*", "schema" to "public", "table" to table)
                     )
-                )
+                ),
+                "access_token" to SupabaseConfig.anonKey
             ),
             "ref" to refCounter.getAndIncrement().toString()
         )

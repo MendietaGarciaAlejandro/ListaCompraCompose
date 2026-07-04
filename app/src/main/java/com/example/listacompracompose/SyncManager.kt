@@ -187,6 +187,21 @@ class SyncManager(private val db: AppDatabase) {
         }.onFailure { Log.w(TAG, "reconcile error", it) }
     }
 
+    /**
+     * Solo trae cambios remotos (sin volver a empujar todo lo local). Pensado para
+     * llamarse cada pocos segundos mientras la app está en primer plano, como red de
+     * seguridad fiable frente al WebSocket de Realtime (que puede fallar en silencio
+     * si el protocolo no encaja exactamente). Barato: son tablas pequeñas de uso personal.
+     */
+    suspend fun pullChanges() = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) return@withContext
+        runCatching {
+            pullProducts()
+            pullProductHistory()
+            pullTemplates()
+        }.onFailure { Log.w(TAG, "pullChanges error", it) }
+    }
+
     private suspend fun pushAllPending() {
         db.productDao().getAllOnce().forEach { pushProduct(it) }
         db.productHistoryDao().getAllOnce().forEach { pushProductHistory(it) }

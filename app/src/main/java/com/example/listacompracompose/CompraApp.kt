@@ -562,7 +562,7 @@ fun CompraApp(vm: CompraViewModel) {
             onCategoriaChange = { categoria = it },
             onIsNewCatChange = { isNewCat = it },
             onConfirm = {
-                val n = name; val p = price.replace(',', '.').toDoubleOrNull() ?: 0.0
+                val n = normalizeProductName(name); val p = price.replace(',', '.').toDoubleOrNull() ?: 0.0
                 val q = qty.toIntOrNull() ?: 1
                 val c = categoria.takeUnless { it.isNullOrBlank() } ?: "General"
                 scope.launch { vm.insert(Product(name = n, price = p, quantity = q, category = c)) }
@@ -590,7 +590,7 @@ fun CompraApp(vm: CompraViewModel) {
             onIsNewCatChange = { isNewCat = it },
             onConfirm = {
                 val original = currentProduct
-                val n = name; val p = price.replace(',', '.').toDoubleOrNull() ?: 0.0
+                val n = normalizeProductName(name); val p = price.replace(',', '.').toDoubleOrNull() ?: 0.0
                 val q = qty.toIntOrNull() ?: 1
                 val c = categoria.takeUnless { it.isNullOrBlank() } ?: "General"
                 scope.launch { original?.let { vm.update(it.copy(name = n, price = p, quantity = q, category = c)) } }

@@ -1,5 +1,9 @@
 package com.example.listacompracompose
 
+// Evita variantes de mayúsculas/minúsculas del mismo producto (p. ej. "leche" vs "Leche"),
+// que Supabase trataría como productos distintos al sincronizar (unique(name) es case-sensitive).
+fun normalizeProductName(name: String): String = name.trim().replaceFirstChar { it.uppercase() }
+
 object TextImporter {
 
     data class ParsedItem(
@@ -43,7 +47,7 @@ object TextImporter {
             work = (work.substring(0, qtyMatch.range.first) + work.substring(qtyMatch.range.last + 1)).trim()
         }
 
-        val name = work.trim().replaceFirstChar { it.uppercase() }
+        val name = normalizeProductName(work)
         if (name.isBlank()) return null
 
         return ParsedItem(name = name, quantity = qty, price = price)

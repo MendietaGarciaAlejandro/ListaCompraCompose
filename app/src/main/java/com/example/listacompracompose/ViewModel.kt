@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,14 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
         NetworkMonitor(application).observe {
             viewModelScope.launch { repo.syncNow() }
             realtime.reconnectNow()
+        }
+        // Red de seguridad fiable: mientras la app está abierta, trae cambios remotos
+        // cada pocos segundos. No depende de que el WebSocket de Realtime funcione.
+        viewModelScope.launch {
+            while (true) {
+                delay(5_000)
+                repo.pullRemoteChanges()
+            }
         }
     }
 
