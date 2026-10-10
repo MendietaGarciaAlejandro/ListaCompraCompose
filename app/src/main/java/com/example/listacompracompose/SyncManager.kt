@@ -79,12 +79,21 @@ class SyncManager(private val db: AppDatabase) {
         }.onFailure { Log.w(TAG, "pushProduct error", it) }
     }
 
-    suspend fun pushProductDelete(name: String) = withContext(Dispatchers.IO) {
+    /**
+     * [bought] distingue "lo he comprado" de "lo quito de la lista". En Supabase hay un
+     * trigger que mete en el inventario de casa todo producto que se borra estando marcado,
+     * así que cuando solo se quita de la lista se desmarca antes de borrarlo.
+     */
+    suspend fun pushProductDelete(name: String, bought: Boolean = false) = withContext(Dispatchers.IO) {
         runCatching {
             if (!SupabaseConfig.isConfigured) return@runCatching
             val url = SupabaseConfig.restUrl("products").toHttpUrl().newBuilder()
                 .addQueryParameter("name", "eq.$name")
                 .build()
+            if (!bought) {
+                val uncheck = """{"is_checked":false}""".toRequestBody(SupabaseConfig.jsonMediaType)
+                client.newCall(requestBuilder(url).patch(uncheck).build()).execute().close()
+            }
             client.newCall(requestBuilder(url).delete().build()).execute().close()
         }.onFailure { Log.w(TAG, "pushProductDelete error", it) }
     }

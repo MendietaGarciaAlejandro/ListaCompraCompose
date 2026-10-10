@@ -155,7 +155,7 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun finalizeShoppingTrip(items: List<Product>) = viewModelScope.launch {
         repo.recordShoppingSession(items)
-        items.forEach { repo.delete(it.name) }
+        items.forEach { repo.delete(it.name, bought = true) }
         ShoppingListWidget.notifyDataChanged(getApplication())
     }
 

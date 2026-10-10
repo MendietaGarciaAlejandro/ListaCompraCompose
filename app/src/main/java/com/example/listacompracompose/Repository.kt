@@ -185,7 +185,8 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
         }.sortedByDescending { it.purchaseCount }
     }
 
-    suspend fun delete(name: String) {
+    // bought = true solo al finalizar la compra: es lo único que debe sumar al inventario de casa
+    suspend fun delete(name: String, bought: Boolean = false) {
         withContext(Dispatchers.IO) {
             try {
                 val rows = dao.deleteByName(name)
@@ -194,7 +195,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
                 e.printStackTrace()
             }
             notifyWidget()
-            sync.pushProductDelete(name)
+            sync.pushProductDelete(name, bought)
         }
     }
 
