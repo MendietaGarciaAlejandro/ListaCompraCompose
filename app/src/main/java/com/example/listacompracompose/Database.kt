@@ -10,14 +10,16 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Product::class, Template::class, ProductHistory::class],
-    version = 6, exportSchema = false
+    entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class, ShoppingSession::class],
+    version = 10, exportSchema = false
 )
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun templateDao(): TemplateDao
     abstract fun productHistoryDao(): ProductHistoryDao
+    abstract fun purchaseLogDao(): PurchaseLogDao
+    abstract fun shoppingSessionDao(): ShoppingSessionDao
 
     companion object {
         @Volatile
@@ -62,6 +64,43 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migración v6 -> v7: añade columna isFavorite al historial
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE historial_productos ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        // Migración v7 -> v8: crea tabla purchase_log
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS purchase_log (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, price REAL NOT NULL, quantity INTEGER NOT NULL, timestamp INTEGER NOT NULL)"
+                )
+            }
+        }
+
+        // Migración v8 -> v9: crea tabla shopping_sessions
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS shopping_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, timestamp INTEGER NOT NULL, itemCount INTEGER NOT NULL DEFAULT 0, totalSpent REAL NOT NULL DEFAULT 0.0)"
+                )
+            }
+        }
+
+        // Migración v9 -> v10: columnas para sincronización con Supabase
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                val now = System.currentTimeMillis()
+                database.execSQL("ALTER TABLE productos ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT $now")
+                database.execSQL("ALTER TABLE historial_productos ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT $now")
+                database.execSQL("ALTER TABLE plantillas ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT $now")
+                database.execSQL("ALTER TABLE purchase_log ADD COLUMN remoteId TEXT")
+                database.execSQL("ALTER TABLE shopping_sessions ADD COLUMN remoteId TEXT")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -69,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

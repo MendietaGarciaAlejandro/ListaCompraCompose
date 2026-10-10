@@ -13,6 +13,8 @@ composeBom = "2026.05.01"
 moshi = "1.15.2"
 moshiKotlin = "1.15.2"
 roomRuntime = "2.8.4"
+okhttp = "4.12.0"
+workRuntimeKtx = "2.10.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -38,6 +40,8 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutinesAndroid" }
 moshi = { module = "com.squareup.moshi:moshi", version.ref = "moshi" }
 moshi-kotlin = { module = "com.squareup.moshi:moshi-kotlin", version.ref = "moshiKotlin" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "workRuntimeKtx" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

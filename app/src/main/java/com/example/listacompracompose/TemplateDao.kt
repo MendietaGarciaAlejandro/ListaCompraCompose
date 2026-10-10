@@ -19,4 +19,7 @@ interface TemplateDao {
 
     @Query("DELETE FROM plantillas WHERE name = :name")
     suspend fun deleteTemplate(name: String)
+
+    @Query("SELECT * FROM plantillas")
+    suspend fun getAllOnce(): List<Template>
 }

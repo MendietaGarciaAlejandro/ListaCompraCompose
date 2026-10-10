@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">ListaCompraCompose</string>
+    <string name="widget_description">Muestra tu lista de la compra pendiente</string>
 </resources>
