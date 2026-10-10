@@ -10,8 +10,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class, ShoppingSession::class],
-    version = 10, exportSchema = false
+    entities = [Product::class, Template::class, ProductHistory::class, PurchaseLog::class, ShoppingSession::class, PendingDelete::class, PendingUpload::class],
+    version = 11, exportSchema = false
 )
 @TypeConverters(ProductListConverter::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -20,6 +20,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun productHistoryDao(): ProductHistoryDao
     abstract fun purchaseLogDao(): PurchaseLogDao
     abstract fun shoppingSessionDao(): ShoppingSessionDao
+    abstract fun pendingDeleteDao(): PendingDeleteDao
+    abstract fun pendingUploadDao(): PendingUploadDao
 
     companion object {
         @Volatile
@@ -101,6 +103,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migración v10 -> v11: borrados y productos nuevos pendientes de subir a Supabase
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS pending_deletes (kind TEXT NOT NULL, name TEXT NOT NULL, bought INTEGER NOT NULL, quantity INTEGER, PRIMARY KEY(kind, name))"
+                )
+                database.execSQL("CREATE TABLE IF NOT EXISTS pending_uploads (name TEXT NOT NULL, PRIMARY KEY(name))")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -108,7 +120,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "compra.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance

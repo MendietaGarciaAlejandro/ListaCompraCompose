@@ -4,6 +4,8 @@ import android.util.Log
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
@@ -51,6 +53,14 @@ class SyncManager(private val db: AppDatabase) {
     suspend fun pushProduct(product: Product) = withContext(Dispatchers.IO) {
         runCatching {
             if (!SupabaseConfig.isConfigured) return@runCatching
+            // El producto vuelve a existir en local con un borrado de ese nombre aún sin subir.
+            // Si era una compra, tiene que llegar antes al servidor para que sume al inventario:
+            // hasta entonces no subimos el nuevo. Si solo se quitó de la lista, ya no vale.
+            val pending = db.pendingDeleteDao().get(PendingDelete.KIND_PRODUCT, product.name)
+            if (pending != null) {
+                if (!pending.bought) discardPendingDelete(PendingDelete.KIND_PRODUCT, product.name)
+                else if (!attemptPendingDelete(pending)) return@runCatching
+            }
             val remote = RemoteProduct(
                 name = product.name,
                 price = product.price,
@@ -67,6 +77,7 @@ class SyncManager(private val db: AppDatabase) {
                 .build()
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
+                    db.pendingUploadDao().delete(product.name)
                     val results = response.body?.string()?.let { productListAdapter.fromJson(it) }
                     val updatedAt = results?.firstOrNull()?.updatedAt
                     if (updatedAt != null) {
@@ -82,20 +93,120 @@ class SyncManager(private val db: AppDatabase) {
     /**
      * [bought] distingue "lo he comprado" de "lo quito de la lista". En Supabase hay un
      * trigger que mete en el inventario de casa todo producto que se borra estando marcado,
-     * así que cuando solo se quita de la lista se desmarca antes de borrarlo.
+     * así que antes de borrarlo se le pone la marca que toca: marcado solo si se ha comprado
+     * y estaba marcado en el móvil, desmarcado en cualquier otro caso.
+     *
+     * El borrado tiene que estar apuntado antes con [markProductDeletePending]: si no llega
+     * al servidor se queda pendiente y se reintenta en [reconcile] y [pullChanges].
      */
     suspend fun pushProductDelete(name: String, bought: Boolean = false) = withContext(Dispatchers.IO) {
         runCatching {
             if (!SupabaseConfig.isConfigured) return@runCatching
-            val url = SupabaseConfig.restUrl("products").toHttpUrl().newBuilder()
-                .addQueryParameter("name", "eq.$name")
-                .build()
-            if (!bought) {
-                val uncheck = """{"is_checked":false}""".toRequestBody(SupabaseConfig.jsonMediaType)
-                client.newCall(requestBuilder(url).patch(uncheck).build()).execute().close()
-            }
-            client.newCall(requestBuilder(url).delete().build()).execute().close()
+            attemptPendingDelete(PendingDelete(PendingDelete.KIND_PRODUCT, name, bought))
         }.onFailure { Log.w(TAG, "pushProductDelete error", it) }
+    }
+
+    /**
+     * Hay que llamarlo antes de borrar el producto en local: guarda si estaba marcado aquí y
+     * con qué cantidad, porque pudo cambiarse sin red y no haber llegado al servidor. Solo cuenta para
+     * el inventario lo que se ha comprado y además estaba marcado.
+     */
+    suspend fun markProductDeletePending(name: String, bought: Boolean = false) = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) return@withContext
+        db.pendingUploadDao().delete(name)
+        val pendingDao = db.pendingDeleteDao()
+        val local = db.productDao().getByName(name)
+        val previous = pendingDao.get(PendingDelete.KIND_PRODUCT, name)
+        // Ya borrado en local y con su borrado apuntado: no pisamos lo que se guardó entonces.
+        if (local == null && previous != null) return@withContext
+        val counts = bought && local?.isChecked == true
+        var quantity = local?.quantity
+        if (previous?.bought == true) {
+            // Queda una compra anterior sin subir y el producto se volvió a añadir (el nuevo
+            // no ha llegado al servidor): esa compra no se puede perder.
+            if (!counts) return@withContext
+            if (quantity != null && previous.quantity != null) quantity += previous.quantity
+        }
+        pendingDao.insert(PendingDelete(PendingDelete.KIND_PRODUCT, name, counts, quantity))
+    }
+
+    /**
+     * Hay que llamarlo antes de crear un producto nuevo en local. Hasta que el servidor lo
+     * confirme, [pullProducts] no lo trata como borrado en remoto por no encontrarlo allí.
+     */
+    suspend fun markProductUploadPending(name: String) = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) return@withContext
+        db.pendingUploadDao().insert(PendingUpload(name))
+    }
+
+    /** Reintenta subir los productos nuevos que no llegaron. Para en el primero que falla. */
+    private suspend fun pushPendingUploads() {
+        val dao = db.pendingUploadDao()
+        for (name in dao.getAllNames()) {
+            val local = db.productDao().getByName(name)
+            if (local == null) {
+                dao.delete(name)
+                continue
+            }
+            pushProduct(local)
+            if (dao.count(name) > 0) return
+        }
+    }
+
+    suspend fun markTemplateDeletePending(name: String) = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) return@withContext
+        db.pendingDeleteDao().insert(PendingDelete(PendingDelete.KIND_TEMPLATE, name))
+    }
+
+    private suspend fun discardPendingDelete(kind: String, name: String) {
+        deleteLock.withLock { db.pendingDeleteDao().delete(kind, name) }
+    }
+
+    /**
+     * Manda al servidor un borrado pendiente y lo da por hecho solo si responde bien.
+     * Devuelve false si el servidor lo rechaza; si no hay red lanza la excepción.
+     * El cerrojo evita borrar en remoto un producto que se acaba de volver a añadir.
+     */
+    private suspend fun attemptPendingDelete(pending: PendingDelete): Boolean = deleteLock.withLock {
+        val dao = db.pendingDeleteDao()
+        val current = dao.get(pending.kind, pending.name) ?: return@withLock true
+        val table = if (current.kind == PendingDelete.KIND_TEMPLATE) "templates" else "products"
+        val url = SupabaseConfig.restUrl(table).toHttpUrl().newBuilder()
+            .addQueryParameter("name", "eq.${current.name}")
+            .build()
+        if (current.kind == PendingDelete.KIND_PRODUCT) {
+            // Deja la marca del servidor como estaba en el móvil al borrar, para que el
+            // trigger del inventario cuente justo lo comprado.
+            // La cantidad solo importa si va a sumar al inventario.
+            val quantity = if (current.bought && current.quantity != null) ""","quantity":${current.quantity}""" else ""
+            val check = """{"is_checked":${current.bought}$quantity}""".toRequestBody(SupabaseConfig.jsonMediaType)
+            val checked = client.newCall(requestBuilder(url).patch(check).build()).execute().use { it.isSuccessful }
+            if (!checked) {
+                Log.w(TAG, "No se pudo actualizar la marca de ${current.name} antes de borrarlo")
+                return@withLock false
+            }
+        }
+        val deleted = client.newCall(requestBuilder(url).delete().build()).execute().use { response ->
+            if (!response.isSuccessful) Log.w(TAG, "Borrado de ${current.name} falló: ${response.code}")
+            response.isSuccessful
+        }
+        if (deleted) dao.delete(current.kind, current.name)
+        deleted
+    }
+
+    /** Reintenta los borrados que no llegaron. Si no hay red lo deja para la próxima vez. */
+    private suspend fun flushPendingDeletes() {
+        for (pending in db.pendingDeleteDao().getAll()) {
+            try {
+                if (attemptPendingDelete(pending) && pending.kind == PendingDelete.KIND_PRODUCT) {
+                    // Si se volvió a añadir mientras tanto, ahora sí se puede subir el nuevo.
+                    db.productDao().getByName(pending.name)?.let { pushProduct(it) }
+                }
+            } catch (e: java.io.IOException) {
+                Log.w(TAG, "Borrados pendientes: sin conexión", e)
+                return
+            }
+        }
     }
 
     suspend fun pushProductHistory(entry: ProductHistory) = withContext(Dispatchers.IO) {
@@ -122,6 +233,7 @@ class SyncManager(private val db: AppDatabase) {
     suspend fun pushTemplate(template: Template) = withContext(Dispatchers.IO) {
         runCatching {
             if (!SupabaseConfig.isConfigured) return@runCatching
+            discardPendingDelete(PendingDelete.KIND_TEMPLATE, template.name)
             val remote = RemoteTemplate(
                 name = template.name,
                 products = template.products.map {
@@ -142,10 +254,7 @@ class SyncManager(private val db: AppDatabase) {
     suspend fun pushTemplateDelete(name: String) = withContext(Dispatchers.IO) {
         runCatching {
             if (!SupabaseConfig.isConfigured) return@runCatching
-            val url = SupabaseConfig.restUrl("templates").toHttpUrl().newBuilder()
-                .addQueryParameter("name", "eq.$name")
-                .build()
-            client.newCall(requestBuilder(url).delete().build()).execute().close()
+            attemptPendingDelete(PendingDelete(PendingDelete.KIND_TEMPLATE, name))
         }.onFailure { Log.w(TAG, "pushTemplateDelete error", it) }
     }
 
@@ -190,6 +299,7 @@ class SyncManager(private val db: AppDatabase) {
     suspend fun reconcile() = withContext(Dispatchers.IO) {
         if (!SupabaseConfig.isConfigured) return@withContext
         runCatching {
+            flushPendingDeletes()
             pushAllPending()
             pullProducts()
             pullProductHistory()
@@ -208,6 +318,8 @@ class SyncManager(private val db: AppDatabase) {
     suspend fun pullChanges() = withContext(Dispatchers.IO) {
         if (!SupabaseConfig.isConfigured) return@withContext
         runCatching {
+            flushPendingDeletes()
+            pushPendingUploads()
             pullProducts()
             pullProductHistory()
             pullTemplates()
@@ -257,9 +369,12 @@ class SyncManager(private val db: AppDatabase) {
 
         // Propaga borrados hechos en remoto, evitando tocar filas locales muy recientes
         // (que podrían no haberse subido todavía).
+        // Los que aún no se han podido subir no cuentan: no estar en remoto no es un borrado.
         val remoteNames = remoteItems.map { it.name.lowercase() }.toSet()
+        val notUploaded = db.pendingUploadDao().getAllNames().map { it.lowercase() }.toSet()
         for (local in dao.getAllOnce()) {
-            if (local.name.lowercase() !in remoteNames && local.updatedAt < syncStart - 5000) {
+            val key = local.name.lowercase()
+            if (key !in remoteNames && key !in notUploaded && local.updatedAt < syncStart - 5000) {
                 dao.deleteByName(local.name)
             }
         }
@@ -293,6 +408,9 @@ class SyncManager(private val db: AppDatabase) {
         val dao = db.productDao()
         val remoteUpdatedAt = SupabaseConfig.parseTimestamp(remote.updatedAt)
         val local = dao.getByName(remote.name)
+        // Borrado en local pero aún sin subir: la fila remota es la que va a desaparecer, así
+        // que ni la resucitamos ni dejamos que pise a un producto vuelto a añadir.
+        if (db.pendingDeleteDao().get(PendingDelete.KIND_PRODUCT, remote.name) != null) return@withContext
         if (local == null) {
             dao.insert(
                 Product(
@@ -318,6 +436,8 @@ class SyncManager(private val db: AppDatabase) {
     }
 
     suspend fun applyRemoteProductDelete(name: String) = withContext(Dispatchers.IO) {
+        // Un producto que aún no ha subido no puede ser el que se ha borrado en remoto.
+        if (db.pendingUploadDao().count(name) > 0) return@withContext
         db.productDao().deleteByName(name)
     }
 
@@ -343,6 +463,7 @@ class SyncManager(private val db: AppDatabase) {
         val dao = db.templateDao()
         val remoteUpdatedAt = SupabaseConfig.parseTimestamp(remote.updatedAt)
         val local = dao.getTemplate(remote.name)
+        if (local == null && db.pendingDeleteDao().get(PendingDelete.KIND_TEMPLATE, remote.name) != null) return@withContext
         if (local == null || remoteUpdatedAt > local.updatedAt) {
             dao.insertTemplate(
                 Template(
@@ -403,5 +524,8 @@ class SyncManager(private val db: AppDatabase) {
 
     companion object {
         private const val TAG = "SyncManager"
+
+        // Compartido entre las instancias de Repository, SyncWorker y RealtimeManager.
+        private val deleteLock = Mutex()
     }
 }

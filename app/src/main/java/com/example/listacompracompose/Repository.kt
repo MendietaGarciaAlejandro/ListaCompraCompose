@@ -41,11 +41,13 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
                     finalProduct = updated
                 } else {
                     finalProduct = prod.copy(updatedAt = System.currentTimeMillis())
+                    sync.markProductUploadPending(prod.name)
                     dao.insert(finalProduct)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 finalProduct = prod.copy(updatedAt = System.currentTimeMillis())
+                sync.markProductUploadPending(prod.name)
                 dao.insert(finalProduct)
             }
             upsertHistory(ProductHistory(name = prod.name, price = prod.price, quantity = prod.quantity, category = prod.category))
@@ -69,6 +71,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     }
 
     suspend fun deleteTemplate(name: String) = withContext(Dispatchers.IO) {
+        sync.markTemplateDeletePending(name)
         templateDao.deleteTemplate(name)
         sync.pushTemplateDelete(name)
     }
@@ -188,6 +191,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
     // bought = true solo al finalizar la compra: es lo único que debe sumar al inventario de casa
     suspend fun delete(name: String, bought: Boolean = false) {
         withContext(Dispatchers.IO) {
+            sync.markProductDeletePending(name, bought)
             try {
                 val rows = dao.deleteByName(name)
                 println("DELETE operation affected $rows rows for product: $name")
@@ -214,6 +218,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
                         println("Cantidad reducida a: ${updated.quantity}")
                         sync.pushProduct(updated)
                     } else {
+                        sync.markProductDeletePending(name)
                         dao.deleteByName(name)
                         println("Producto eliminado")
                         sync.pushProductDelete(name)
@@ -238,6 +243,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
 
     suspend fun deleteAll(name: String) {
         withContext(Dispatchers.IO) {
+            sync.markProductDeletePending(name)
             dao.deleteByName(name)
             notifyWidget()
             sync.pushProductDelete(name)
