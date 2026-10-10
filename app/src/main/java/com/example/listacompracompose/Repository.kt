@@ -21,6 +21,7 @@ class CompraRepository(private val db: AppDatabase, private val context: Context
 
     suspend fun syncNow() = sync.reconcile()
     suspend fun pullRemoteChanges() = sync.pullChanges()
+    suspend fun fetchInventory() = sync.fetchInventory()
 
     val allItems: Flow<List<Product>> = dao.getAll()
     val allTemplates: Flow<List<Template>> = templateDao.getAllTemplates()

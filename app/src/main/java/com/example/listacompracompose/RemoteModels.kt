@@ -49,3 +49,19 @@ data class RemoteShoppingSession(
     @Json(name = "item_count") val itemCount: Int = 0,
     @Json(name = "total_spent") val totalSpent: Double = 0.0
 )
+
+// Fila del inventario de casa (lo gestiona la app InventarioCasa y la web).
+// Aquí solo se lee, para avisar de lo que ya hay antes de comprarlo.
+data class RemoteInventoryItem(
+    val name: String,
+    val quantity: Int = 0,
+    val status: String = "ok"
+)
+
+/** Texto del aviso "ya está en casa", o null si no hay nada que avisar. */
+fun stockHintFor(stock: Map<String, RemoteInventoryItem>, name: String): String? {
+    val item = stock[name.trim().lowercase()] ?: return null
+    if (item.status == "out" || item.quantity <= 0) return null
+    return if (item.status == "low") "Queda poco en casa (${item.quantity})"
+           else "Ya hay ${item.quantity} en casa"
+}

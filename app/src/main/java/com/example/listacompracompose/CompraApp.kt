@@ -58,6 +58,7 @@ fun CompraApp(vm: CompraViewModel) {
     val items by vm.items.collectAsState()
     val themeMode by vm.themeMode.collectAsState()
     val categoryOrder by vm.categoryOrder.collectAsState()
+    val stock by vm.stock.collectAsState()
 
     val groupedItems = remember(items) { items.groupBy { it.category } }
     val orderedCategories = remember(groupedItems, categoryOrder) {
@@ -113,6 +114,7 @@ fun CompraApp(vm: CompraViewModel) {
             items = items,
             onToggle = { vm.toggleCheckedStatus(it) },
             onExit = { showShoppingMode = false },
+            stockHint = { stockHintFor(stock, it) },
             onSaveAsTemplate = if (allChecked) {
                 {
                     scope.launch {
@@ -314,6 +316,7 @@ fun CompraApp(vm: CompraViewModel) {
                             items(products) { prod ->
                                 ProductItemRow(
                                     product = prod,
+                                    stockHint = stockHintFor(stock, prod.name),
                                     onToggle = { vm.toggleCheckedStatus(prod.name) },
                                     onIncrement = { vm.incrementQuantity(prod.name) },
                                     onDecrement = { vm.reduceQuantity(prod.name) },
@@ -1010,6 +1013,8 @@ private fun ProductFormDialog(
     var showSuggestions by remember { mutableStateOf(false) }
     var isFavoritesMode by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val stock by vm.stock.collectAsState()
+    val stockHint = stockHintFor(stock, name)
 
     // Cargar favoritos al abrir el formulario
     LaunchedEffect(Unit) {
@@ -1044,6 +1049,9 @@ private fun ProductFormDialog(
                             }
                         },
                         label = { Text("Nombre *") },
+                        supportingText = stockHint?.let { hint ->
+                            { Text(hint, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold) }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(MenuAnchorType.PrimaryEditable),
@@ -1191,6 +1199,7 @@ private fun ProductFormDialog(
 @Composable
 fun ProductItemRow(
     product: Product,
+    stockHint: String? = null,
     onToggle: () -> Unit,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
@@ -1229,6 +1238,13 @@ fun ProductItemRow(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                         textDecoration = if (product.isChecked) TextDecoration.LineThrough else null
+                    )
+                }
+                if (stockHint != null && !product.isChecked) {
+                    Text(
+                        text = stockHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary
                     )
                 }
             }

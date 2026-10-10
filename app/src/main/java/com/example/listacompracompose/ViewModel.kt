@@ -23,6 +23,27 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
     val items = repo.allItems.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val templates = repo.allTemplates.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    // ── Inventario de casa (solo lectura, para avisar de lo que ya hay) ──────
+    private val stockPrefs = application.getSharedPreferences("compra_stock", Context.MODE_PRIVATE)
+    private val _stock = MutableStateFlow(readCachedStock())
+    val stock: StateFlow<Map<String, RemoteInventoryItem>> = _stock.asStateFlow()
+
+    private suspend fun refreshStock() {
+        val items = repo.fetchInventory() ?: return
+        _stock.value = items.associateBy { it.name.trim().lowercase() }
+        // Se guarda lo último visto para que el aviso siga saliendo sin cobertura en la tienda
+        stockPrefs.edit()
+            .putStringSet("items", items.map { "${it.quantity}|${it.status}|${it.name}" }.toSet())
+            .apply()
+    }
+
+    private fun readCachedStock(): Map<String, RemoteInventoryItem> =
+        stockPrefs.getStringSet("items", emptySet()).orEmpty().mapNotNull { line ->
+            val parts = line.split("|", limit = 3)
+            if (parts.size < 3) return@mapNotNull null
+            RemoteInventoryItem(name = parts[2], quantity = parts[0].toIntOrNull() ?: 0, status = parts[1])
+        }.associateBy { it.name.trim().lowercase() }
+
     // ── Sincronización con Supabase (Realtime + polling de seguridad) ────────
     private val realtime = RealtimeManager(db)
 
@@ -42,7 +63,15 @@ class CompraViewModel(application: Application) : AndroidViewModel(application) 
                 repo.pullRemoteChanges()
             }
         }
+        // El inventario cambia poco: basta con refrescarlo de vez en cuando.
+        viewModelScope.launch {
+            while (true) {
+                refreshStock()
+                delay(30_000)
+            }
+        }
     }
+
 
     override fun onCleared() {
         super.onCleared()

@@ -22,7 +22,8 @@ fun ShoppingModeScreen(
     items: List<Product>,
     onToggle: (String) -> Unit,
     onExit: () -> Unit,
-    onSaveAsTemplate: (() -> Unit)? = null
+    onSaveAsTemplate: (() -> Unit)? = null,
+    stockHint: (String) -> String? = { null }
 ) {
     val pending = items.filter { !it.isChecked }
     val done = items.count { it.isChecked }
@@ -134,6 +135,7 @@ fun ShoppingModeScreen(
                         items(products, key = { it.name }) { prod ->
                             ShoppingModeItem(
                                 product = prod,
+                                stockHint = stockHint(prod.name),
                                 onToggle = { onToggle(prod.name) }
                             )
                         }
@@ -177,7 +179,7 @@ fun ShoppingModeScreen(
 }
 
 @Composable
-private fun ShoppingModeItem(product: Product, onToggle: () -> Unit) {
+private fun ShoppingModeItem(product: Product, stockHint: String?, onToggle: () -> Unit) {
     ElevatedCard(
         onClick = onToggle,
         modifier = Modifier.fillMaxWidth(),
@@ -208,6 +210,14 @@ private fun ShoppingModeItem(product: Product, onToggle: () -> Unit) {
                         text = "€${"%.2f".format(product.price)} · subtotal €${"%.2f".format(product.price * product.quantity)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                if (stockHint != null) {
+                    Text(
+                        text = stockHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.tertiary
                     )
                 }
             }

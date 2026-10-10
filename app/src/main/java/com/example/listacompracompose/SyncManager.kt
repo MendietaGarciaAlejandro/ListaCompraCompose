@@ -34,6 +34,9 @@ class SyncManager(private val db: AppDatabase) {
     private val sessionListAdapter =
         moshi.adapter<List<RemoteShoppingSession>>(Types.newParameterizedType(List::class.java, RemoteShoppingSession::class.java))
 
+    private val inventoryListAdapter =
+        moshi.adapter<List<RemoteInventoryItem>>(Types.newParameterizedType(List::class.java, RemoteInventoryItem::class.java))
+
     private fun requestBuilder(url: okhttp3.HttpUrl, prefer: String? = null): Request.Builder {
         val builder = Request.Builder().url(url)
             .addHeader("apikey", SupabaseConfig.anonKey)
@@ -208,6 +211,17 @@ class SyncManager(private val db: AppDatabase) {
         db.templateDao().getAllOnce().forEach { pushTemplate(it) }
         db.purchaseLogDao().getAllLogs().filter { it.remoteId == null }.forEach { pushPurchaseLog(it) }
         db.shoppingSessionDao().getAll().filter { it.remoteId == null }.forEach { pushShoppingSession(it) }
+    }
+
+    /**
+     * Inventario de casa, solo lectura. Devuelve null si no se pudo consultar
+     * (sin red, tabla aún no creada...) para que quien llama conserve lo último que tenía.
+     */
+    suspend fun fetchInventory(): List<RemoteInventoryItem>? = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) return@withContext null
+        runCatching {
+            fetchAll("inventory")?.let { inventoryListAdapter.fromJson(it) }
+        }.onFailure { Log.w(TAG, "fetchInventory error", it) }.getOrNull()
     }
 
     private fun fetchAll(table: String): String? {
